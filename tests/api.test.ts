@@ -119,7 +119,7 @@ describe('real workerd + D1 + R2 integration', () => {
     expect(downloaded.headers.get('content-disposition')).toContain('attachment;');
     await downloaded.arrayBuffer();
 
-    const fake = await reserve(8, 'day', {name: 'spoof.pdf'});
+    const fake = await reserve('not-a-pdf'.length, 'day', {name: 'spoof.pdf'});
     expect(fake.res.status).toBe(201);
     expect((await request(`uploads/${fake.data.upload}`, {method:'PUT', body:'not-a-pdf'})).status).toBe(200);
     expect((await request(`shares/${fake.data.share}/preview`)).status).toBe(404);
