@@ -19,6 +19,6 @@
   .footer-controls { margin-left: auto; display: flex; align-items: center; gap: 14px; }
   .github-mark { display: block; }
   :global(.dark) .github-mark { filter: invert(1); }
-  .site-footer { padding: 12px 0; font-size: 10px; gap: 12px; }
-  @media (max-width: 600px) { .site-footer { font-size: 9px; } }
+  .site-footer { padding: 12px 0; font-size: 12px; gap: 12px; }
+  @media (max-width: 600px) { .site-footer { font-size: 12px; } }
 </style>
