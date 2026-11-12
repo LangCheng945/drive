@@ -143,7 +143,7 @@
 <div class="drive-home">
   <div class="transfer-intro">
     <div class="transfer-eyebrow"><span></span> 免登入 · 限時分享</div>
-    <h1>分享，然後放下<span>。</span></h1>
+    <h1>傳個檔案<span>。</span></h1>
     <p>選好檔案，取得連結，傳給對方。</p>
   </div>
   <section class="transfer-card" aria-label="檔案分享">
