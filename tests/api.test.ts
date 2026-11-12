@@ -59,7 +59,7 @@ describe('real workerd + D1 + R2 integration', () => {
     const info = await (await request(`shares/${r.data.share}`)).json() as {previewable:boolean};
     expect(info.previewable).toBe(true);
     const preview = await request(`shares/${r.data.share}/preview`);
-    expect(preview.status, await preview.text()).toBe(200);
+    expect(preview.status).toBe(200);
     expect(preview.headers.get('content-type')).toBe('image/png');
     expect(preview.headers.get('content-disposition')).toContain('inline;');
     expect(preview.headers.get('cache-control')).toContain('no-store');
