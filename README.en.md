@@ -11,6 +11,7 @@ Planned domain: <https://drive.langcheng.uk>. Repository: <https://github.com/La
 - Real streamed file storage, downloads and private deletion; no public object URLs or file listing.
 - One-time transfer: a conditional D1 write grants exactly one claim. Interrupted downloads still consume the claim. GET previews never claim.
 - 24-hour sharing: repeated downloads until expiry, immediate authorization expiry and eventual background object deletion.
+- On-demand previews for PNG/JPEG/GIF/WebP (up to 5 MB), PDF (up to 8 MB), and small UTF-8 plain-text files (up to 256 KB). Previews are disabled for one-time links. PDF uses a restricted browser frame; some browsers may require downloading instead.
 - Global 1,000,000,000-byte capacity, 50,000,000-byte files, configurable retention up to 86,400 seconds.
 - Atomic reservations, FixedLengthStream enforcement, stale-upload cleanup, retryable deletion, orphan scans and admin repair.
 - Server-verified Turnstile, invitation code, persistent rate limits, administrator upload switch and abuse reports.
@@ -52,6 +53,6 @@ Free-plan-compatible does not mean unlimited or guaranteed zero cost. R2 account
 
 There are no accounts, analytics or public file listings. D1 stores file metadata and SHA-256 capability hashes. Raw IP addresses are not saved; short-lived salted hashes support rate limiting. A share URL grants access to its bearer, and a separate private management URL grants deletion. Lost capabilities cannot be recovered.
 
-This is **not end-to-end encrypted** and does not scan for malware. The operator and Cloudflare can access contents. Do not upload confidential information. Extension blocking does not establish safety. Authorization ends at expiry; physical deletion follows asynchronously. Existing transfers and recipient copies cannot be recalled. Metadata tombstones remain for replay prevention and repair; reports expire after 30 days.
+Previews do not execute text content as markup. PDF preview is sandboxed but not a malware scanner. This is **not end-to-end encrypted** and does not scan for malware. The operator and Cloudflare can access contents. Do not upload confidential information. Extension blocking does not establish safety. Authorization ends at expiry; physical deletion follows asynchronously. Existing transfers and recipient copies cannot be recalled. Metadata tombstones remain for replay prevention and repair; reports expire after 30 days.
 
 See [SECURITY.md](SECURITY.md) for responsible disclosure and [CONTRIBUTING.md](CONTRIBUTING.md) for contributions. Project code is MIT; third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -2,6 +2,7 @@ import type { Env, FileRow } from './types';
 import type { ReadableStream as WorkerReadableStream } from '@cloudflare/workers-types';
 import { admin, ApiError, equal, fail, hash, now, rate, safeName, settings, smallJson, token, turnstile, validToken } from './security';
 import { cleanup, publicFile, removeFile } from './storage';
+import { decodePreviewText, previewKind, previewMime, validPreviewHeader } from './preview';
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 declare const FixedLengthStream: { new (size: number): { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } };
@@ -84,6 +85,65 @@ async function download(req: Request, e: Env, secret: string) {
     'Content-Security-Policy': "sandbox; default-src 'none'", 'Accept-Ranges': 'none'
   } });
 }
+async function preview(req: Request, e: Env, secret: string) {
+  await rate(e, req, 'preview', 20);
+  if (!validToken(secret)) unavailable();
+  const sh = await hash(secret), row = await publicFile(e, sh);
+  // Once-only shares cannot expose file contents without consuming their claim.
+  const kind = row ? previewKind(row.name, row.size, row.mode) : null;
+  if (!row || !kind) unavailable();
+  const mime = previewMime(row.name, kind);
+  const key = `files/${row.id}`;
+  let body: ReadableStream<Uint8Array> | string;
+  let payloadSize = row.size;
+
+  if (kind === 'text') {
+    // Plain text is capped at 256 KB and decoded on the server with strict UTF-8.
+    // It is NEVER interpreted as HTML, JavaScript or Markdown.
+    const object = await e.BUCKET.get(key);
+    if (!object || object.size !== row.size) {
+      if (object) await object.body.cancel();
+      unavailable();
+    }
+    const bytes = new Uint8Array(await object.arrayBuffer());
+    if (bytes.length !== row.size) unavailable();
+    const decoded = decodePreviewText(bytes);
+    if (decoded === null) unavailable();
+    body = decoded;
+    payloadSize = new TextEncoder().encode(decoded).length;
+  } else {
+    // Verify the actual header before streaming an image or a PDF.
+    const prefix = await e.BUCKET.get(key, { range: { offset: 0, length: 16 } });
+    if (!prefix || prefix.size !== row.size) unavailable();
+    const bytes = new Uint8Array(await prefix.arrayBuffer());
+    if (!validPreviewHeader(mime, bytes)) unavailable();
+    const object = await e.BUCKET.get(key);
+    if (!object || object.size !== row.size) {
+      if (object) await object.body.cancel();
+      unavailable();
+    }
+    body = object.body as unknown as ReadableStream<Uint8Array>;
+  }
+
+  // An expired, deleted or consumed link must never be reopened during R2 I/O.
+  if (!await publicFile(e, sh)) {
+    if (typeof body !== 'string') await body.cancel();
+    unavailable();
+  }
+  const headers = new Headers({
+    'Content-Type': mime,
+    'Content-Length': String(payloadSize),
+    'Content-Disposition': 'inline; filename="preview"',
+    'Cache-Control': 'private, no-store',
+    'Content-Security-Policy': "sandbox; default-src 'none'; object-src 'none'; frame-ancestors 'self'",
+    'X-Content-Type-Options': 'nosniff',
+    'Cross-Origin-Resource-Policy': 'same-origin'
+  });
+  // PDF must be frameable by the same-origin sandboxed iframe on the share page.
+  // Every other preview type remains non-frameable.
+  if (kind !== 'pdf') headers.set('X-Frame-Options', 'DENY');
+  return new Response(body, { headers });
+}
 async function repair(e: Env, req: Request) {
   if (await enabled(e)) fail(409, 'PAUSE_FIRST', '請先關閉上傳再執行修復。');
   const active = await e.DB.prepare("SELECT id FROM files WHERE state IN ('reserved','uploading') AND lease_until>? LIMIT 1").bind(now()).first();
@@ -118,8 +178,9 @@ export async function handle(req: Request, e: Env): Promise<Response> {
       await rate(e, req, 'lookup', 60);
       const row = validToken(path[1]) ? await publicFile(e, await hash(path[1])) : null;
       if (!row) unavailable();
-      response = json({ name: row.name, size: row.size, mode: row.mode, expiresAt: row.expires_at });
-    } else if (path[0] === 'shares' && path[2] === 'download' && path.length === 3 && req.method === 'POST') response = await download(req, e, path[1]);
+      response = json({ name: row.name, size: row.size, mode: row.mode, expiresAt: row.expires_at, previewable: previewKind(row.name, row.size, row.mode) !== null, previewKind: previewKind(row.name, row.size, row.mode) });
+    } else if (path[0] === 'shares' && path[2] === 'preview' && path.length === 3 && req.method === 'GET') response = await preview(req, e, path[1]);
+    else if (path[0] === 'shares' && path[2] === 'download' && path.length === 3 && req.method === 'POST') response = await download(req, e, path[1]);
     else if (path[0] === 'shares' && path[2] === 'report' && path.length === 3 && req.method === 'POST') {
       await rate(e, req, 'report', 3, 3600);
       // Recipients can report a once-only file after claiming it; this never
