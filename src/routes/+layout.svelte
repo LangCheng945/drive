@@ -5,7 +5,7 @@
   let { children } = $props();
   let dark = $state(false);
   onMount(() => {
-    dark = localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    dark = localStorage.getItem('theme') !== 'light';
     document.documentElement.classList.toggle('dark', dark);
   });
   function toggle() { dark = !dark; document.documentElement.classList.toggle('dark', dark); localStorage.setItem('theme', dark ? 'dark' : 'light'); }

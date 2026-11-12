@@ -26,3 +26,7 @@ Coverage includes normal upload/download/delete, exact downloaded bytes and safe
 ## Limits of verification
 
 Free-plan production CPU and bandwidth under all chunking/concurrency patterns have not been load-tested. The real 50 MB test ran in local workerd, not the live public account. No malware scanning, end-to-end encryption, penetration audit or accessibility certification is claimed. Physical distributed orphan cleanup is eventual; see ARCHITECTURE.md. GitHub publication is separate from this prepared source release and Cloudflare deployment.
+
+## Upload-card redesign verification
+
+The independently implemented upload-card redesign was verified on the same date. Lint, type checking (zero errors/warnings), all 22 backend integration tests and the Cloudflare production build passed. Browser QA covered centered/compact layout switching, a real invalid-invitation error row and retry entry, real production Turnstile verification and upload, the green 100% stored state, QR rendering, reopening a successful transfer from recent history, and both themes at a 375px mobile viewport without horizontal overflow. A subsequent production download matched the 81-byte fixture exactly, a repeat once-only claim returned 404, private deletion returned 200, and occupied capacity returned to zero. No sample/demo uploads or progress timers are included in the new interface. See DESIGN.md for the interaction and reference notes.

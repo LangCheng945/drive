@@ -14,7 +14,7 @@ Planned domain: <https://drive.langcheng.uk>. Repository: <https://github.com/La
 - Global 1,000,000,000-byte capacity, 50,000,000-byte files, configurable retention up to 86,400 seconds.
 - Atomic reservations, FixedLengthStream enforcement, stale-upload cleanup, retryable deletion, orphan scans and admin repair.
 - Server-verified Turnstile, invitation code, persistent rate limits, administrator upload switch and abuse reports.
-- Responsive Traditional Chinese UI, light/dark themes, progress, QR codes and separate management capabilities. English message infrastructure is reserved; a complete language switcher is not included.
+- Responsive Traditional Chinese UI, light/dark themes, centered/compact uploader layouts, real progress and retry, in-memory recent transfers, QR codes and separate management capabilities. English message infrastructure is reserved; a complete language switcher is not included.
 
 ## Run locally
 
