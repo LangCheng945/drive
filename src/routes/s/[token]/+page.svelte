@@ -3,9 +3,36 @@
   import { onMount } from 'svelte';
   import { Download, File, ShieldCheck, Flag, ArrowLeft, AlertCircle, Eye } from '@lucide/svelte';
   import { api, formatBytes, formatDate } from '#lib/ui.ts';
-  let info = $state<{ name: string; size: number; mode: string; expiresAt: number; previewable: boolean }>();
-  let loading = $state(true); let error = $state(''); let claimed = $state(false); let previewOpen = $state(false); let previewError = $state(false); let reporting = $state(false); let reason = $state(''); let reportState = $state(''); let reportBusy = $state(false);
-  onMount(() => { api<typeof info>(`/api/shares/${page.params.token}`).then(v => info = v).catch(e => error = e.message).finally(() => loading = false); });
+  let info = $state<{ name: string; size: number; mode: string; expiresAt: number; previewable: boolean; previewKind: 'image' | 'pdf' | 'text' | null }>();
+  let loading = $state(true); let error = $state(''); let claimed = $state(false); let previewOpen = $state(false); let previewError = $state(false); let previewBusy = $state(false); let previewText = $state(''); let previewRequest: AbortController | undefined; let reporting = $state(false); let reason = $state(''); let reportState = $state(''); let reportBusy = $state(false);
+  onMount(() => { api<typeof info>(`/api/shares/${page.params.token}`).then(v => info = v).catch(e => error = e.message).finally(() => loading = false); return () => previewRequest?.abort(); });
+  async function togglePreview() {
+    if (previewOpen) {
+      previewRequest?.abort();
+      previewOpen = false;
+      return;
+    }
+    previewOpen = true;
+    previewError = false;
+    previewText = '';
+    if (info?.previewKind !== 'text') return;
+    previewBusy = true;
+    previewRequest?.abort();
+    const controller = new AbortController();
+    previewRequest = controller;
+    try {
+      const response = await fetch(`/api/shares/${page.params.token}/preview`, {
+        signal: controller.signal, cache: 'no-store', referrerPolicy: 'no-referrer'
+      });
+      if (!response.ok || !response.headers.get('content-type')?.startsWith('text/plain')) throw Error('preview unavailable');
+      const text = await response.text();
+      if (!controller.signal.aborted) previewText = text;
+    } catch {
+      if (!controller.signal.aborted) previewError = true;
+    } finally {
+      if (!controller.signal.aborted) previewBusy = false;
+    }
+  }
   async function report() { reportBusy = true; reportState = ''; try { await api(`/api/shares/${page.params.token}/report`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }); reportState = '檢舉已送出。'; reason = ''; } catch (e) { reportState = (e as Error).message; } finally { reportBusy = false; } }
 </script>
 <svelte:head><title>領取檔案 — LangCheng Drive</title><meta name="robots" content="noindex,nofollow"/></svelte:head>
@@ -13,18 +40,26 @@
 {#if loading}<div class="spinner"></div><h1>正在確認分享連結…</h1>
 {:else if error}<AlertCircle size={35}/><h1>無法開啟這個分享連結</h1><p role="alert">{error}</p><a href="/" class="button primary">回首頁上傳檔案</a>
 {:else if info}<div class="file-icon"><File size={30}/></div><div class="eyebrow">檔案資訊</div><h1 class="file-name">{info.name}</h1><p>{formatBytes(info.size)} · {info.mode === 'once' ? '下載一次' : '限時分享'}</p><div class="notice"><ShieldCheck size={18}/><span>{info.mode === 'once' ? '這個連結只能下載一次。開始下載後，即使中斷也無法重試。' : '到期前可重複下載。開啟檔案前，請確認來源可信。'}</span></div>
-{#if info.previewable}
-  <section class="file-preview" aria-label="圖片預覽">
+{#if info.previewable && info.previewKind}
+  <section class="file-preview" aria-label="檔案預覽">
     <button type="button" class="button secondary full file-preview-toggle" aria-expanded={previewOpen}
-      onclick={() => { previewOpen = !previewOpen; previewError = false; }}>
-      <Eye size={16}/>{previewOpen ? '收起預覽' : '預覽圖片'}
+      onclick={togglePreview}>
+      <Eye size={16}/>{previewOpen ? '收起預覽' : info.previewKind === 'image' ? '預覽圖片' : info.previewKind === 'pdf' ? '預覽 PDF' : '預覽文字'}
     </button>
     {#if previewOpen}
       {#if previewError}
-        <p role="status">這張圖片無法預覽，請直接下載檔案。</p>
-      {:else}
+        <p role="status">無法預覽這個檔案，請直接下載。</p>
+      {:else if info.previewKind === 'image'}
         <img src={`/api/shares/${page.params.token}/preview`} alt={`圖片預覽：${info.name}`}
           loading="lazy" referrerpolicy="no-referrer" onerror={() => previewError = true}/>
+      {:else if info.previewKind === 'pdf'}
+        <iframe src={`/api/shares/${page.params.token}/preview`} title={`PDF 預覽：${info.name}`}
+          sandbox="" loading="lazy" referrerpolicy="no-referrer" onerror={() => previewError = true}></iframe>
+        <p>若瀏覽器未顯示 PDF，請使用下方的下載按鈕。</p>
+      {:else if previewBusy}
+        <p role="status">正在讀取文字…</p>
+      {:else}
+        <pre class="file-preview-text">{previewText}</pre>
       {/if}
     {/if}
   </section>
