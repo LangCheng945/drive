@@ -1,7 +1,7 @@
 import type { Env, FileRow } from './types';
 import type { ReadableStream as WorkerReadableStream } from '@cloudflare/workers-types';
-import { admin, ApiError, equal, fail, hash, now, rate, safeName, settings, smallJson, token, turnstile, validToken } from './security';
-import { cleanup, publicFile, removeFile } from './storage';
+import { admin, ApiError, fail, hash, now, rate, safeName, settings, smallJson, thumbnailData, token, turnstile, validToken } from './security';
+import { cleanup, listedFile, publicFile, removeFile } from './storage';
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 declare const FixedLengthStream: { new (size: number): { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } };
@@ -14,21 +14,26 @@ async function reserve(req: Request, e: Env) {
   await rate(e, req, 'upload', 5);
   if (!await enabled(e)) fail(503, 'UPLOADS_DISABLED', '管理員暫時關閉了上傳，現有分享仍可使用。');
   const b = await smallJson(req), cfg = settings(e);
-  if (!e.BETA_INVITE_CODE || typeof b.invite !== 'string' || !await equal(b.invite, e.BETA_INVITE_CODE)) fail(403, 'INVITE', 'Limited Beta：請輸入有效邀請碼。');
   const name = safeName(b.name), size = b.size;
   if (typeof size !== 'number' || !Number.isSafeInteger(size) || size <= 0) fail(400, 'SIZE', '請選擇非空白檔案。');
   if (size > cfg.maxFile) fail(413, 'TOO_LARGE', '檔案超過單檔大小上限。');
-  if (b.mode !== 'once' && b.mode !== 'day') fail(400, 'MODE', '請選擇分享模式。');
+  const mode = b.mode ?? 'day';
+  const visibility = b.visibility ?? 'public';
+  if (mode !== 'once' && mode !== 'day') fail(400, 'MODE', '請選擇分享模式。');
+  if (visibility !== 'public' && visibility !== 'unlisted') fail(400, 'VISIBILITY', '請選擇公開或不公開。');
+  const thumbnail = thumbnailData(b.thumbnail);
+  const thumbnailSize = thumbnail?.length ?? 0;
   await turnstile(e, req, b.turnstile);
   const share = token(), manage = token(), upload = token(), id = crypto.randomUUID(), t = now();
+  const publicId = visibility === 'public' ? token() : null;
   const [sh, mh, uh] = await Promise.all([hash(share), hash(manage), hash(upload)]);
   // Predicate and insertion are one statement on D1's primary. The INSERT trigger
   // updates the singleton ledger before any competing INSERT can run.
-  const result = await e.DB.prepare(`INSERT INTO files(id,share_hash,manage_hash,upload_hash,name,size,mode,state,created_at,expires_at,lease_until,delete_after)
-    SELECT ?,?,?,?,?,?,?,'reserved',?,?,?,? FROM storage WHERE id=1 AND uploads_disabled=0 AND occupied+?<=? RETURNING id`)
-    .bind(id, sh, mh, uh, name, size, b.mode, t, t + cfg.retention, t + 900, t + 900, size, cfg.capacity).first();
+  const result = await e.DB.prepare(`INSERT INTO files(id,share_hash,manage_hash,upload_hash,name,size,mode,state,created_at,expires_at,lease_until,delete_after,visibility,public_id,thumbnail,thumbnail_size)
+    SELECT ?,?,?,?,?,?,?,'reserved',?,?,?,?,?,?,?,? FROM storage WHERE id=1 AND uploads_disabled=0 AND occupied+?<=? RETURNING id`)
+    .bind(id, sh, mh, uh, name, size, mode, t, t + cfg.retention, t + 900, t + 900, visibility, publicId, thumbnail, thumbnailSize, size + thumbnailSize, cfg.capacity).first();
   if (!result) fail(507, 'CAPACITY', '目前共用空間不足或上傳已關閉，請稍後再試。');
-  return json({ upload, share, manage, expiresAt: t + cfg.retention }, 201);
+  return json({ upload, share, manage, publicId, visibility, mode, expiresAt: t + cfg.retention }, 201);
 }
 async function upload(req: Request, e: Env, secret: string) {
   if (!validToken(secret)) unavailable();
@@ -60,10 +65,10 @@ async function upload(req: Request, e: Env, secret: string) {
     throw err;
   }
 }
-async function download(req: Request, e: Env, secret: string) {
+async function download(req: Request, e: Env, secret: string, listed = false) {
   await rate(e, req, 'download', 30);
   if (!validToken(secret)) unavailable();
-  const sh = await hash(secret), row = await publicFile(e, sh);
+  const sh = await hash(secret), row = listed ? await listedFile(e, secret) : await publicFile(e, sh);
   if (!row) unavailable();
   const object = await e.BUCKET.get(`files/${row.id}`);
   if (!object || object.size !== row.size) {
@@ -74,7 +79,7 @@ async function download(req: Request, e: Env, secret: string) {
     if (!won) { await object.body.cancel(); unavailable(); }
   } else {
     // Recheck after R2 read so expiry/admin deletion during the await denies access.
-    if (!await publicFile(e, sh)) { await object.body.cancel(); unavailable(); }
+    if (!(listed ? await listedFile(e, secret) : await publicFile(e, sh))) { await object.body.cancel(); unavailable(); }
   }
   const filename = encodeURIComponent(row.name).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   return new Response(object.body as unknown as ReadableStream<Uint8Array>, { headers: {
@@ -83,6 +88,20 @@ async function download(req: Request, e: Env, secret: string) {
     'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store',
     'Content-Security-Policy': "sandbox; default-src 'none'", 'Accept-Ranges': 'none'
   } });
+}
+async function listing(req: Request, e: Env, url: URL) {
+  await rate(e, req, 'public-list', 60);
+  const before = url.searchParams.get('before');
+  if (before && !/^\d{1,12}:[a-f0-9-]{36}$/.test(before)) fail(400, 'CURSOR', '分頁參數無效。');
+  const [time, id] = before?.split(':') ?? [];
+  const query = e.DB.prepare(`SELECT id,public_id,name,size,mode,expires_at,created_at,thumbnail FROM files
+    WHERE visibility='public' AND public_id IS NOT NULL AND state='ready' AND expires_at>?
+    ${before ? 'AND (created_at<? OR (created_at=? AND id<?))' : ''}
+    ORDER BY created_at DESC,id DESC LIMIT 21`);
+  const rows = await (before ? query.bind(now(), Number(time), Number(time), id) : query.bind(now())).all<FileRow>();
+  const files = rows.results.slice(0, 20);
+  const last = files.at(-1);
+  return json({ files: files.map(f => ({ publicId: f.public_id, name: f.name, size: f.size, mode: f.mode, expiresAt: f.expires_at, thumbnail: f.thumbnail ? `data:image/webp;base64,${f.thumbnail}` : null })), nextCursor: rows.results.length > 20 && last ? `${last.created_at}:${last.id}` : null });
 }
 async function repair(e: Env, req: Request) {
   if (await enabled(e)) fail(409, 'PAUSE_FIRST', '請先關閉上傳再執行修復。');
@@ -98,7 +117,7 @@ async function repair(e: Env, req: Request) {
       await removeFile(e, row.id);
     }
   }
-  await e.DB.prepare("UPDATE storage SET occupied=(SELECT COALESCE(SUM(size),0) FROM files WHERE state!='deleted') WHERE id=1").run();
+  await e.DB.prepare("UPDATE storage SET occupied=(SELECT COALESCE(SUM(size+thumbnail_size),0) FROM files WHERE state!='deleted') WHERE id=1").run();
   return json({ after: rows.results.at(-1)?.id ?? null, done: rows.results.length < 5 });
 }
 export async function handle(req: Request, e: Env): Promise<Response> {
@@ -114,17 +133,18 @@ export async function handle(req: Request, e: Env): Promise<Response> {
       response = json({ ...cfg, occupied: s?.occupied ?? cfg.capacity, uploadsEnabled: await enabled(e), siteKey: e.TURNSTILE_SITE_KEY || '', beta: true });
     } else if (path[0] === 'uploads' && path.length === 1 && req.method === 'POST') response = await reserve(req, e);
     else if (path[0] === 'uploads' && path.length === 2 && req.method === 'PUT') response = await upload(req, e, path[1]);
-    else if (path[0] === 'shares' && path.length === 2 && req.method === 'GET') {
+    else if (path[0] === 'public' && path.length === 1 && req.method === 'GET') response = await listing(req, e, url);
+    else if ((path[0] === 'shares' || path[0] === 'public') && path.length === 2 && req.method === 'GET') {
       await rate(e, req, 'lookup', 60);
-      const row = validToken(path[1]) ? await publicFile(e, await hash(path[1])) : null;
+      const row = validToken(path[1]) ? (path[0] === 'public' ? await listedFile(e, path[1]) : await publicFile(e, await hash(path[1]))) : null;
       if (!row) unavailable();
-      response = json({ name: row.name, size: row.size, mode: row.mode, expiresAt: row.expires_at });
-    } else if (path[0] === 'shares' && path[2] === 'download' && path.length === 3 && req.method === 'POST') response = await download(req, e, path[1]);
-    else if (path[0] === 'shares' && path[2] === 'report' && path.length === 3 && req.method === 'POST') {
+      response = json({ name: row.name, size: row.size, mode: row.mode, expiresAt: row.expires_at, thumbnail: row.thumbnail ? `data:image/webp;base64,${row.thumbnail}` : null });
+    } else if ((path[0] === 'shares' || path[0] === 'public') && path[2] === 'download' && path.length === 3 && req.method === 'POST') response = await download(req, e, path[1], path[0] === 'public');
+    else if ((path[0] === 'shares' || path[0] === 'public') && path[2] === 'report' && path.length === 3 && req.method === 'POST') {
       await rate(e, req, 'report', 3, 3600);
       // Recipients can report a once-only file after claiming it; this never
       // restores download authorization or reveals another file's metadata.
-      const row = validToken(path[1]) ? await e.DB.prepare("SELECT id FROM files WHERE share_hash=? AND state IN ('ready','claimed') AND expires_at>?").bind(await hash(path[1]), now()).first<{id: string}>() : null;
+      const row = validToken(path[1]) ? await e.DB.prepare(`SELECT id FROM files WHERE ${path[0] === 'public' ? "public_id=? AND visibility='public'" : 'share_hash=?'} AND state IN ('ready','claimed') AND expires_at>?`).bind(path[0] === 'public' ? path[1] : await hash(path[1]), now()).first<{id: string}>() : null;
       if (!row) unavailable();
       const b = await smallJson(req);
       if (typeof b.reason !== 'string' || b.reason.trim().length < 5 || b.reason.length > 1000) fail(400, 'REASON', '請輸入 5–1000 字的檢舉原因。');

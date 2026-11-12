@@ -2,14 +2,16 @@
 
 ## Data path
 
-1. `POST /api/uploads`: validate JSON bounds, invitation, type/name/size, rate limit and Turnstile hostname/action. A replay ledger prevents a converging Siteverify replay from creating two reservations.
+1. `POST /api/uploads`: validate JSON bounds, type/name/size, rate limit and Turnstile hostname/action. A replay ledger prevents a converging Siteverify replay from creating two reservations.
 2. A single `INSERT … SELECT … WHERE occupied + size <= limit` reserves the file on D1's primary. An INSERT trigger increments `storage.occupied` within the same statement. D1 read replication is not enabled; authorization reads use the primary binding.
-3. Client receives independent 256-bit upload, share and management tokens. D1 stores only hashes. Share access is unavailable while reserved/uploading.
+3. Client receives independent 256-bit upload, share and management tokens. D1 stores their hashes. Public files additionally receive a separate random `public_id` for intentionally public URLs. Share access is unavailable while reserved/uploading.
 4. `PUT /api/uploads/:upload`: a conditional update changes reserved → uploading exactly once. The raw body pipes to FixedLengthStream(size), then private R2. Underflow, overflow, timeout and Content-Length mismatch fail. No full-file arrayBuffer/FormData is used. R2's returned actual size must equal the reservation before uploading → ready.
 5. The share page GET returns minimal metadata. Explicit POST streams an attachment. For one-time mode, after opening the R2 object, a conditional ready → claimed UPDATE grants one winner. All losers cancel their already-open read. Claims are never refunded. Ranges/resume are not supported.
 6. The claim schedules deletion after five minutes. Expiry always denies new download authorization immediately; deletion may wait for Cron.
 
 ## Capacity
+
+Visibility defaults to `public` and mode to `day` for new API reservations. `visibility=unlisted` excludes a file from the public list and public lookup/download/report routes; its private share capability remains usable. `GET /api/public` returns only ready, unexpired public files, 20 at a time with a stable timestamp/UUID cursor. `/p/:publicId` and `/s/:shareToken` use the same attachment and atomic claim logic. A one-time file cannot be claimed once through each route. Migration 0002 gives all old records `unlisted` visibility and no public identifier, preserving their privacy.
 
 Every non-deleted row counts its immutable reserved size, including deleting rows. A successfully stored object's size must equal that reservation, so actual and reserved bytes coincide. Failed/incomplete uploads cannot become ready. R2 deletion happens before the conditional deleting → deleted state transition; the release trigger runs exactly once even under concurrent cleanup/manual deletion. A failed delete keeps the reservation and schedules retry.
 

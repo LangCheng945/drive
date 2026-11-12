@@ -50,6 +50,6 @@ Repair returns 409 if uploads are enabled or a live upload lease remains. It nev
 
 ## Rollback and secrets
 
-Keep D1 and R2 backups consistent; D1 Time Travel alone can restore metadata for objects already deleted. Pause before restore, reconcile afterward, and do not resurrect expired capabilities. Rotate invitations for new beta groups. Rotate ADMIN_TOKEN and RATE_LIMIT_SALT independently. R2 is accessed through bindings and needs no public S3 keys.
+Keep D1 and R2 backups consistent; D1 Time Travel alone can restore metadata for objects already deleted. Pause before restore, reconcile afterward, and do not resurrect expired capabilities. Rotate ADMIN_TOKEN and RATE_LIMIT_SALT independently. R2 is accessed through bindings and needs no public S3 keys.
 
 Do not share this deployment's resource IDs or credentials with Fork users; give them the public configuration examples. Monitor database growth from retained tombstones and review a retention policy before the beta becomes a long-running public service.

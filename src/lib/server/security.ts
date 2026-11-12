@@ -13,6 +13,14 @@ export async function hash(s: string): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))), b => b.toString(16).padStart(2, '0')).join('');
 }
 export async function equal(a: string, b: string): Promise<boolean> { return (await hash(a)) === (await hash(b)); }
+export function thumbnailData(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || value.length > 4096 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) fail(400, 'THUMBNAIL', '縮圖格式無效。');
+  let raw: string;
+  try { raw = atob(value); } catch { fail(400, 'THUMBNAIL', '縮圖格式無效。'); }
+  if (raw.length < 12 || raw.length > 3072 || raw.slice(0, 4) !== 'RIFF' || raw.slice(8, 12) !== 'WEBP' || btoa(raw) !== value) fail(400, 'THUMBNAIL', '縮圖必須為小型 WebP 圖片。');
+  return value;
+}
 export function settings(e: Env) {
   const number = (s: string | undefined, fallback: number, max: number) => {
     if (!s) return fallback;

@@ -8,7 +8,7 @@
   --transfer-faint: #949d98;
   max-width: 560px;
   margin: 0 auto;
-  padding: 47px 0 42px;
+  padding: 48px 0 28px;
 }
 .dark .drive-home {
   --transfer-accent: #38c798;
@@ -20,41 +20,15 @@
 }
 /* Quiet neutral shell lets the upload card carry the visual hierarchy. */
 html.dark { background: #0a0d0b; --surface: #111513; --soft: #181e1a; --line: #242c26; --text: #e6ebe7; --muted: #929e96; --blue: #75c6a6; --blue-soft: #162a20; }
-.transfer-intro { text-align: center; margin-bottom: 28px; }
-.transfer-eyebrow { display: flex; gap: 8px; align-items: center; justify-content: center; font-size: 8px; font-weight: 550; letter-spacing: 1.9px; color: var(--muted); }
-.transfer-eyebrow > span { height: 4px; width: 4px; border-radius: 50%; background: var(--transfer-accent); box-shadow: 0 0 9px #35bc8a35; }
-.transfer-intro h1 { font-size: 34px; letter-spacing: -1.4px; font-weight: 560; margin: 17px 0 12px; }
-.transfer-intro h1 span { color: var(--transfer-accent); }
-.transfer-intro > p { font-size: 12px; color: var(--muted); line-height: 1.8; margin: 0; }
 .transfer-card { border: 1px solid var(--transfer-border); background: var(--transfer-panel); padding: 20px; border-radius: 21px; box-shadow: 0 20px 65px #14281a06, inset 0 1px 0 #ffffff06; }
 .dark .transfer-card { box-shadow: 0 24px 70px #00000028, inset 0 1px 0 #ffffff03; }
 .transfer-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 3px 17px; }
-.transfer-card-heading h2 { display: flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 600; margin: 0; }
-.transfer-beta { font-size: 7px; letter-spacing: .7px; border: 1px solid var(--transfer-border); color: var(--transfer-faint); padding: 3px 4px; border-radius: 4px; font-weight: 500; }
+.transfer-card-heading h1 { display: flex; gap: 8px; align-items: center; font-size: 18px; letter-spacing: 0; font-weight: 550; margin: 0; }
 .transfer-card-heading p { font-size: 10px; margin: 6px 0 0; color: var(--muted); }
-.transfer-heading-actions { display: flex; gap: 7px; align-items: center; }
-.transfer-layout-switch { display: flex; gap: 1px; padding: 3px; border: 1px solid var(--transfer-border); border-radius: 30px; background: var(--transfer-inset); }
-.transfer-layout-switch button { display: flex; align-items: center; gap: 4px; background: transparent; border: 0; border-radius: 20px; color: var(--transfer-faint); padding: 5px 9px; font-size: 9px; transition: color .18s, background .18s; }
-.transfer-layout-switch button.chosen { background: var(--soft); color: var(--text); box-shadow: 0 1px 4px #0000000c; }
-.transfer-reset { background: transparent; color: var(--transfer-faint); height: 29px; width: 29px; border: 1px solid var(--transfer-border); border-radius: 50%; display: grid; place-items: center; }
-.transfer-reset:hover:not(:disabled) { color: var(--text); background: var(--soft); }
-.transfer-drop { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 0; min-height: 222px; border: 1px solid var(--transfer-border); border-radius: 13px; background: var(--transfer-inset); padding: 23px 18px; transition: border-color .18s, background .18s; }
 .transfer-drop.dragging { border-color: var(--transfer-accent); background: var(--transfer-accent-soft); }
 .transfer-drop.locked { opacity: .65; }
-.transfer-cloud { display: grid; place-items: center; height: 49px; width: 49px; border: 1px solid var(--transfer-border); border-radius: 14px; background: var(--soft); color: var(--text); box-shadow: inset 0 1px 0 #ffffff05; margin-bottom: 14px; }
-.transfer-drop-copy { text-align: center; }
-.transfer-drop h3 { font-size: 14px; line-height: 1.5; font-weight: 550; margin: 0; letter-spacing: -.2px; }
-.transfer-drop-copy p { font-size: 10px; color: var(--muted); margin: 6px 0 15px; }
 .transfer-browse { display: flex; align-items: center; gap: 5px; border: 1px solid var(--transfer-border); background: var(--surface); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 10px; font-weight: 550; box-shadow: 0 2px 5px #00000005; }
 .transfer-browse:hover:not(:disabled) { background: var(--soft); border-color: var(--muted); }
-.transfer-file-limit { color: var(--transfer-faint); font-size: 9px; margin-top: 13px; }
-.transfer-drop.compact { min-height: 111px; display: grid; grid-template-columns: 42px 1fr auto; column-gap: 12px; padding: 19px 16px; }
-.transfer-drop.compact .transfer-cloud { width: 42px; height: 42px; border-radius: 12px; grid-row: 1 / 3; margin: 0; }
-.transfer-drop.compact .transfer-drop-copy { text-align: left; }
-.transfer-drop.compact .transfer-drop-copy h3 { font-size: 12px; }
-.transfer-drop.compact .transfer-drop-copy p { font-size: 9px; margin: 5px 0 0; }
-.transfer-drop.compact .transfer-browse { grid-column: 3; grid-row: 1 / 3; }
-.transfer-drop.compact .transfer-file-limit { grid-column: 2; margin-top: 7px; font-size: 8px; }
 .transfer-queue { display: flex; flex-direction: column; gap: 8px; margin-top: 13px; }
 .transfer-file { display: flex; gap: 10px; align-items: flex-start; padding: 12px 11px; background: var(--transfer-inset); border: 1px solid var(--transfer-border); border-radius: 11px; animation: transfer-enter .2s ease-out; }
 .transfer-file.is-error { border-color: #e5525c32; }
@@ -84,6 +58,22 @@ progress.transfer-progress { display: block; width: 100%; height: 4px; overflow:
 .transfer-file-error { margin: 7px 0 0; color: #d7717a; font-size: 9px; line-height: 1.7; overflow-wrap: anywhere; }
 .transfer-spinner { animation: spin 1.2s linear infinite; }
 .transfer-options { margin: 19px 2px 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.transfer-options select { max-width: 240px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--transfer-border); border-radius: 7px; background: var(--transfer-inset); color: var(--text); font: inherit; font-size: 11px; }
+.public-files { margin-top: 26px; padding-top: 17px; border-top: 1px solid var(--transfer-border); }
+.public-files-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.public-files-heading h2 { margin: 0; font-size: 14px; font-weight: 550; }
+.public-file-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.public-file-list li { border-bottom: 1px solid var(--transfer-border); }
+.public-file-list a { display: flex; align-items: center; gap: 12px; padding: 14px 2px; }
+.public-file-list a:hover { background: var(--transfer-inset); }
+.public-file-icon, .public-file-list a > svg:last-child { flex-shrink: 0; color: var(--muted); }
+.public-file-content { flex: 1; min-width: 0; }
+.public-file-content strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
+.public-file-content > span { display: block; color: var(--muted); font-size: 10px; margin-top: 5px; }
+.public-file-content small { display: block; color: var(--transfer-faint); font-size: 9px; margin-top: 5px; }
+.public-files-message, .public-files-error { margin: 13px 0 0; font-size: 11px; color: var(--muted); line-height: 1.8; }
+.public-files-error { color: #d7717a; }
+.public-files-more { margin-top: 12px; width: 100%; padding: 10px; border: 1px solid var(--transfer-border); border-radius: 7px; background: var(--transfer-inset); color: var(--text); font-size: 11px; }
 .transfer-option-label { font-size: 10px; color: var(--muted); }
 .transfer-mode-switch { display: flex; gap: 4px; }
 .transfer-mode-switch button { display: flex; gap: 5px; align-items: center; border: 1px solid transparent; background: transparent; color: var(--transfer-faint); border-radius: 7px; padding: 7px 9px; font-size: 10px; }
@@ -133,34 +123,15 @@ progress.transfer-progress { display: block; width: 100%; height: 4px; overflow:
 .transfer-qr { display: block; flex-shrink: 0; border: 5px solid #fff; border-radius: 8px; width: 88px; height: 88px; background: #fff; }
 .transfer-next { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; border: 0; background: transparent; color: var(--muted); border-top: 1px solid var(--transfer-border); margin-top: 14px; padding: 12px 0 0; font-size: 10px; }
 .transfer-next:hover { color: var(--text); }
-.transfer-trust { display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 25px; color: var(--muted); }
-.transfer-trust > span { display: flex; align-items: center; gap: 5px; font-size: 9px; }
-.transfer-trust > i { width: 2px; height: 2px; border-radius: 50%; background: var(--transfer-faint); }
 .transfer-privacy { text-align: center; font-size: 9px; line-height: 1.8; color: var(--transfer-faint); margin: 12px 0 0; }
 @keyframes transfer-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes transfer-pulse { 50% { opacity: .45; } }
 @media (max-width: 600px) {
   .drive-home { padding: 35px 0 30px; }
-  .transfer-intro { margin-bottom: 25px; }
-  .transfer-intro h1 { font-size: 29px; margin-top: 16px; }
-  .transfer-intro > p { font-size: 11px; }
-  .transfer-eyebrow { font-size: 7px; letter-spacing: 1.5px; }
   .transfer-card { padding: 15px; border-radius: 17px; }
   .transfer-card-heading { padding: 2px 0 16px; }
-  .transfer-card-heading h2 { font-size: 12px; }
+  .transfer-card-heading h1 { font-size: 17px; }
   .transfer-card-heading p { font-size: 9px; }
-  .transfer-heading-actions { gap: 5px; }
-  .transfer-layout-switch button { padding: 5px 7px; font-size: 8px; }
-  .transfer-layout-switch button svg { display: none; }
-  .transfer-reset { width: 26px; height: 26px; }
-  .transfer-drop { min-height: 213px; }
-  .transfer-drop.compact { grid-template-columns: 35px 1fr auto; gap: 8px; padding: 17px 10px; }
-  .transfer-drop.compact .transfer-cloud { height: 35px; width: 35px; }
-  .transfer-drop.compact .transfer-cloud svg { width: 21px; }
-  .transfer-drop.compact .transfer-drop-copy h3 { font-size: 10px; }
-  .transfer-drop.compact .transfer-drop-copy p { font-size: 8px; }
-  .transfer-drop.compact .transfer-browse { padding: 8px 9px; font-size: 9px; }
-  .transfer-drop.compact .transfer-file-limit { font-size: 7px; }
   .transfer-file { padding: 10px 9px; gap: 8px; }
   .transfer-file-heading > strong { font-size: 11px; }
   .transfer-file-meta { font-size: 9px; }
@@ -173,8 +144,28 @@ progress.transfer-progress { display: block; width: 100%; height: 4px; overflow:
   .transfer-result { padding: 12px; }
   .transfer-result-heading > span:last-child { font-size: 7px; }
   .transfer-private-hint { font-size: 7px; }
-  .transfer-trust { gap: 10px; }
-  .transfer-trust > span { font-size: 8px; }
   .transfer-privacy { font-size: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .drive-home *, .drive-home *::before, .drive-home *::after { animation: none !important; transition: none !important; } }
+
+
+.transfer-drop { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 112px; border: 1px solid var(--transfer-border); border-radius: 11px; background: var(--transfer-inset); padding: 20px 16px; transition: border-color .18s, background .18s; }
+.transfer-cloud { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--transfer-border); border-radius: 10px; background: var(--soft); color: var(--muted); }
+.transfer-drop-copy { text-align: left; min-width: 0; }
+.transfer-drop-copy h2 { font-size: 13px; font-weight: 500; margin: 0; line-height: 1.6; }
+.transfer-drop-copy p { font-size: 10px; color: var(--muted); margin: 5px 0 0; line-height: 1.7; }
+.transfer-browse { font-size: 11px; min-height: 36px; }
+@media (max-width: 600px) {
+  .transfer-drop { grid-template-columns: 32px minmax(0, 1fr) auto; gap: 8px; padding: 17px 10px; }
+  .transfer-cloud { height: 32px; width: 32px; border-radius: 8px; }
+  .transfer-cloud svg { width: 20px; }
+  .transfer-drop-copy h2 { font-size: 12px; }
+  .transfer-drop-copy p { font-size: 10px; }
+  .transfer-browse { padding: 8px 10px; font-size: 11px; }
+}
+
+.public-file-list li { display:flex; align-items:center; gap:12px; }
+.public-file-list a { flex:1; min-width:0; }
+.public-file-thumbnail { display:grid; place-items:center; width:52px; height:52px; flex-shrink:0; overflow:hidden; border:1px solid var(--transfer-border); border-radius:9px; background:var(--transfer-inset); color:var(--muted); }
+button.public-file-thumbnail { cursor:pointer; }
+.public-file-thumbnail img { width:100%; height:100%; object-fit:cover; }
