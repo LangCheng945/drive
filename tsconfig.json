@@ -1,0 +1,9 @@
+{
+  "extends": "$app/tsconfig",
+  "compilerOptions": {
+    "strict": true, "allowJs": true, "checkJs": true, "esModuleInterop": true,
+    "resolveJsonModule": true, "skipLibCheck": true, "sourceMap": true,
+    "moduleResolution": "bundler", "types": ["$app/types", "node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", "workers/**/*.ts", "vite.config.ts"]
+}
