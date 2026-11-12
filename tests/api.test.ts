@@ -50,6 +50,55 @@ describe('real workerd + D1 + R2 integration', () => {
     expect(await occupied()).toBe(0); expect((await bucket.list()).objects.length).toBe(0);
     expect((await request(`shares/${f.share}`)).status).toBe(404);
   });
+  it('previews small raster images without changing 24-hour download behavior', async () => {
+    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9ULzZgAAAABJRU5ErkJggg==', 'base64'));
+    const r = await reserve(png.length, 'day', {name:'photo.png'});
+    expect(r.res.status).toBe(201);
+    const uploaded = await request(`uploads/${r.data.upload}`, {method:'PUT', body:png});
+    expect(uploaded.status, await uploaded.text()).toBe(200);
+    const info = await (await request(`shares/${r.data.share}`)).json() as {previewable:boolean};
+    expect(info.previewable).toBe(true);
+    const preview = await request(`shares/${r.data.share}/preview`);
+    expect(preview.status, await preview.text()).toBe(200);
+    expect(preview.headers.get('content-type')).toBe('image/png');
+    expect(preview.headers.get('content-disposition')).toContain('inline;');
+    expect(preview.headers.get('cache-control')).toContain('no-store');
+    expect(preview.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(new Uint8Array(await preview.arrayBuffer())).toEqual(png);
+    expect((await request(`shares/${r.data.share}/download`, {method:'POST'})).status).toBe(200);
+    expect((await request(`shares/${r.data.share}/preview`)).status).toBe(200);
+    await request(`manage/${r.data.manage}`, {method:'DELETE'});
+    expect((await request(`shares/${r.data.share}/preview`)).status).toBe(404);
+  });
+  it('never previews one-time links or untrusted file content', async () => {
+    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9ULzZgAAAABJRU5ErkJggg==', 'base64'));
+    const once = await reserve(png.length, 'once', {name:'photo.png'});
+    expect(once.res.status).toBe(201);
+    expect((await request(`uploads/${once.data.upload}`, {method:'PUT',body:png})).status).toBe(200);
+    const onceInfo = await (await request(`shares/${once.data.share}`)).json() as {previewable:boolean};
+    expect(onceInfo.previewable).toBe(false);
+    expect((await request(`shares/${once.data.share}/preview`)).status).toBe(404);
+    expect((await request(`shares/${once.data.share}/download`, {method:'POST'})).status).toBe(200);
+
+    const fake = await reserve(12, 'day', {name:'spoof.png'});
+    expect(fake.res.status).toBe(201);
+    expect((await request(`uploads/${fake.data.upload}`, {method:'PUT',body:'<h1>bad</h1>'})).status).toBe(200);
+    expect((await request(`shares/${fake.data.share}/preview`)).status).toBe(404);
+    expect((await request(`shares/${fake.data.share}/download`, {method:'POST'})).status).toBe(200);
+  });
+  it('does not preview non-images or expired shares', async () => {
+    const f = await ready();
+    const info = await (await request(`shares/${f.share}`)).json() as {previewable:boolean};
+    expect(info.previewable).toBe(false);
+    expect((await request(`shares/${f.share}/preview`)).status).toBe(404);
+
+    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9ULzZgAAAABJRU5ErkJggg==', 'base64'));
+    const img = await reserve(png.length, 'day', {name:'photo.png'});
+    expect(img.res.status).toBe(201);
+    expect((await request(`uploads/${img.data.upload}`, {method:'PUT',body:png})).status).toBe(200);
+    await db.prepare('UPDATE files SET expires_at=1 WHERE share_hash=(SELECT share_hash FROM files WHERE mode=\'day\' AND size=? LIMIT 1)').bind(png.length).run();
+    expect((await request(`shares/${img.data.share}/preview`)).status).toBe(404);
+  });
   it('rejects >50MB on server without reserving', async () => { expect((await reserve(50000001)).res.status).toBe(413); expect(await occupied()).toBe(0); });
   it('rejects when full', async () => { await db.prepare('UPDATE storage SET occupied=1000000000').run(); expect((await reserve()).res.status).toBe(507); });
   it('atomically arbitrates competing capacity reservations', async () => {
