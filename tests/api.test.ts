@@ -86,8 +86,11 @@ describe('real workerd + D1 + R2 integration', () => {
     expect((await request(`shares/${fake.data.share}/preview`)).status).toBe(404);
     expect((await request(`shares/${fake.data.share}/download`, {method:'POST'})).status).toBe(200);
   });
-  it('does not preview non-images or expired shares', async () => {
-    const f = await ready();
+  it('does not preview unsupported file types or expired shares', async () => {
+    const r = await reserve(4, 'day', {name:'file.bin'});
+    expect(r.res.status).toBe(201);
+    expect((await request(`uploads/${r.data.upload}`, {method:'PUT',body:'test'})).status).toBe(200);
+    const f = r.data;
     const info = await (await request(`shares/${f.share}`)).json() as {previewable:boolean};
     expect(info.previewable).toBe(false);
     expect((await request(`shares/${f.share}/preview`)).status).toBe(404);
