@@ -99,6 +99,76 @@ describe('real workerd + D1 + R2 integration', () => {
     await db.prepare('UPDATE files SET expires_at=1 WHERE share_hash=(SELECT share_hash FROM files WHERE mode=\'day\' AND size=? LIMIT 1)').bind(png.length).run();
     expect((await request(`shares/${img.data.share}/preview`)).status).toBe(404);
   });
+  it('previews PDFs in a sandboxable response without altering downloads', async () => {
+    const bytes = new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF');
+    const r = await reserve(bytes.length, 'day', {name: 'slides.pdf'});
+    expect(r.res.status).toBe(201);
+    expect((await request(`uploads/${r.data.upload}`, {method: 'PUT', body: bytes})).status).toBe(200);
+    const info = await (await request(`shares/${r.data.share}`)).json() as {previewable: boolean; previewKind: string};
+    expect(info.previewable).toBe(true);
+    expect(info.previewKind).toBe('pdf');
+    const preview = await request(`shares/${r.data.share}/preview`);
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get('content-type')).toBe('application/pdf');
+    expect(preview.headers.get('content-security-policy')).toContain('sandbox;');
+    expect(preview.headers.get('content-security-policy')).toContain("frame-ancestors 'self'");
+    expect(preview.headers.get('x-frame-options')).toBeNull();
+    expect(new Uint8Array(await preview.arrayBuffer())).toEqual(bytes);
+    const downloaded = await request(`shares/${r.data.share}/download`, {method:'POST'});
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.headers.get('content-disposition')).toContain('attachment;');
+    await downloaded.arrayBuffer();
+
+    const fake = await reserve(8, 'day', {name: 'spoof.pdf'});
+    expect(fake.res.status).toBe(201);
+    expect((await request(`uploads/${fake.data.upload}`, {method:'PUT', body:'not-a-pdf'})).status).toBe(200);
+    expect((await request(`shares/${fake.data.share}/preview`)).status).toBe(404);
+  });
+  it('returns literal UTF-8 text, never rendered HTML, and rejects binary content', async () => {
+    const sample = '<script>alert(1)</script>\n## Plain text';
+    const r = await reserve(new TextEncoder().encode(sample).length, 'day', {name:'example.md'});
+    expect(r.res.status).toBe(201);
+    expect((await request(`uploads/${r.data.upload}`, {method:'PUT',body:sample})).status).toBe(200);
+    const metadata = await (await request(`shares/${r.data.share}`)).json() as {previewable:boolean;previewKind:string};
+    expect(metadata.previewable).toBe(true);
+    expect(metadata.previewKind).toBe('text');
+    const preview = await request(`shares/${r.data.share}/preview`);
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get('content-type')).toContain('text/plain');
+    expect(preview.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(preview.headers.get('x-frame-options')).toBe('DENY');
+    expect(await preview.text()).toBe(sample);
+
+    const binary = Uint8Array.from([0, 1, 2, 3]);
+    const invalid = await reserve(binary.length, 'day', {name:'binary.txt'});
+    expect(invalid.res.status).toBe(201);
+    expect((await request(`uploads/${invalid.data.upload}`, {method:'PUT',body:binary})).status).toBe(200);
+    expect((await request(`shares/${invalid.data.share}/preview`)).status).toBe(404);
+
+    const badUtf8 = Uint8Array.from([0xc3, 0x28]);
+    const broken = await reserve(badUtf8.length, 'day', {name:'invalid.json'});
+    expect(broken.res.status).toBe(201);
+    expect((await request(`uploads/${broken.data.upload}`, {method:'PUT',body:badUtf8})).status).toBe(200);
+    expect((await request(`shares/${broken.data.share}/preview`)).status).toBe(404);
+  });
+  it('never previews once-only PDFs/text or text over the preview size cap', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.4\nbody');
+    const r = await reserve(pdf.length, 'once', {name:'once.pdf'});
+    expect(r.res.status).toBe(201);
+    expect((await request(`uploads/${r.data.upload}`, {method:'PUT', body:pdf})).status).toBe(200);
+    const info = await (await request(`shares/${r.data.share}`)).json() as {previewable:boolean;previewKind:string|null};
+    expect(info.previewable).toBe(false);
+    expect(info.previewKind).toBeNull();
+    expect((await request(`shares/${r.data.share}/preview`)).status).toBe(404);
+    expect((await request(`shares/${r.data.share}/download`, {method:'POST'})).status).toBe(200);
+
+    const larger = await reserve(256001, 'day', {name:'large.txt'});
+    expect(larger.res.status).toBe(201);
+    expect((await request(`uploads/${larger.data.upload}`, {method:'PUT',body:new Uint8Array(256001)})).status).toBe(200);
+    const tooLarge = await (await request(`shares/${larger.data.share}`)).json() as {previewable:boolean};
+    expect(tooLarge.previewable).toBe(false);
+    expect((await request(`shares/${larger.data.share}/preview`)).status).toBe(404);
+  });
   it('rejects >50MB on server without reserving', async () => { expect((await reserve(50000001)).res.status).toBe(413); expect(await occupied()).toBe(0); });
   it('rejects when full', async () => { await db.prepare('UPDATE storage SET occupied=1000000000').run(); expect((await reserve()).res.status).toBe(507); });
   it('atomically arbitrates competing capacity reservations', async () => {
