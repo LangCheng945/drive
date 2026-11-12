@@ -1,6 +1,6 @@
 # LangCheng Drive
 
-**Share it. Let it go.** A working, login-free temporary file exchange built with SvelteKit, TypeScript, Tailwind CSS, Cloudflare Pages, private R2, D1 and Turnstile. **v0.1.0 · Limited Beta**
+**Temporary file sharing, no account required.** A working file exchange built with SvelteKit, TypeScript, Tailwind CSS, Cloudflare Pages, private R2, D1 and Turnstile. **v0.1.0 · Limited Beta**
 
 [繁體中文](README.md) · [Deployment](docs/DEPLOYMENT.md) · [Architecture](docs/ARCHITECTURE.md) · [Operations](docs/OPERATIONS.md)
 

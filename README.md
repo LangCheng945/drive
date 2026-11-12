@@ -1,6 +1,6 @@
 # LangCheng Drive
 
-**分享，然後放下。** 免登入、隱私優先的臨時檔案交換平台。v0.1.0 · Limited Beta
+**免登入的臨時檔案分享服務。**v0.1.0 · Limited Beta
 
 [English](README.en.md) · [部署](docs/DEPLOYMENT.md) · [架構與安全](docs/ARCHITECTURE.md) · [管理與修復](docs/OPERATIONS.md)
 

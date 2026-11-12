@@ -7,4 +7,4 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
   if (!r.ok) throw new Error((body as {message?: string}).message || '操作失敗，請稍後再試。');
   return body as T;
 }
-export const messages = { 'zh-Hant': { upload: '開始分享', once: '一次性快傳', day: '24 小時分享' }, en: { upload: 'Share file', once: 'One-time transfer', day: '24-hour link' } };
+export const messages = { 'zh-Hant': { upload: '上傳檔案', once: '下載一次', day: '限時分享' }, en: { upload: 'Share file', once: 'One-time transfer', day: '24-hour link' } };
