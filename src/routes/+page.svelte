@@ -57,14 +57,14 @@
   function choose(f?: File) {
     if (busy || !f) return;
     clearSelection();
-    if (!f.size) { error = '請選擇非空白檔案。'; return; }
+    if (!f.size) { error = '不能上傳空檔案。'; return; }
     if (status && f.size > status.maxFile) { error = `單檔上限為 ${formatBytes(status.maxFile)}。`; return; }
     file = f;
   }
   function drop(e: DragEvent) {
     e.preventDefault(); dragging = false;
     if (busy || !status?.uploadsEnabled) return;
-    if (e.dataTransfer?.files.length !== 1) { error = '每次傳送一個檔案。完成後可以繼續新增。'; return; }
+    if (e.dataTransfer?.files.length !== 1) { error = '一次只能上傳一個檔案。完成後可以再上傳。'; return; }
     choose(e.dataTransfer.files[0]);
   }
   async function start() {
@@ -136,19 +136,19 @@
 </script>
 
 <svelte:head>
-  <title>LangCheng Drive — 分享，然後放下。</title>
-  <meta name="description" content="免登入、隱私優先的臨時檔案交換。一次性快傳或 24 小時分享，簡單、快速、不留多餘痕跡。" />
+  <title>LangCheng Drive — 傳個檔案。</title>
+  <meta name="description" content="免登入傳送檔案。可選擇下載一次或限時重複下載。" />
 </svelte:head>
 
 <div class="drive-home">
   <div class="transfer-intro">
-    <div class="transfer-eyebrow"><span></span> A SIMPLE, PRIVATE HANDOFF</div>
+    <div class="transfer-eyebrow"><span></span> 免登入 · 限時分享</div>
     <h1>分享，然後放下<span>。</span></h1>
-    <p>檔案短暫停留。分享，就是這麼簡單。</p>
+    <p>選好檔案，取得連結，傳給對方。</p>
   </div>
   <section class="transfer-card" aria-label="檔案分享">
     <div class="transfer-card-heading">
-      <div><h2>傳送檔案<span class="transfer-beta">BETA</span></h2><p aria-live="polite">{total ? `${completed} / ${total} 個檔案已完成` : '準備好你的下一次分享'}</p></div>
+      <div><h2>傳送檔案<span class="transfer-beta">BETA</span></h2><p aria-live="polite">{total ? `${completed} / ${total} 個檔案已完成` : '尚未選擇檔案'}</p></div>
       <div class="transfer-heading-actions">
         <div class="transfer-layout-switch" role="group" aria-label="上傳區排列">
           <button class:chosen={layout === 'centered'} onclick={() => layout = 'centered'} aria-pressed={layout === 'centered'} title="置中排列"><AlignCenter size={13}/><span>置中</span></button>
@@ -163,7 +163,7 @@
       ondrop={drop} role="region" aria-label="拖曳檔案上傳區域">
       <input bind:this={input} type="file" hidden onchange={() => choose(input.files?.[0])} disabled={busy || !status?.uploadsEnabled}/>
       <div class="transfer-cloud" aria-hidden="true"><CloudUpload size={25} strokeWidth={1.6}/></div>
-      <div class="transfer-drop-copy"><h3>{dragging ? '放開，準備傳送' : '拖曳檔案到這裡'}</h3><p>文件、圖片、影片或壓縮檔</p></div>
+      <div class="transfer-drop-copy"><h3>{dragging ? '放開以加入檔案' : '拖曳檔案到這裡'}</h3><p>文件、圖片、影片或壓縮檔</p></div>
       <button class="transfer-browse" onclick={() => input.click()} disabled={busy || !status?.uploadsEnabled}>{result ? '新增檔案' : '選擇檔案'}{#if result}<Plus size={13}/>{/if}</button>
       <small class="transfer-file-limit">最高 {formatBytes(status?.maxFile ?? 50000000)} · 每次一個檔案</small>
     </div>
@@ -182,45 +182,45 @@
     {/if}
     {#if visibleResult}
       <section class="transfer-result" aria-label="分享連結與私人管理">
-        <div class="transfer-result-heading"><span class="transfer-result-dot"></span><h3>已準備好分享</h3><span>有效至 {formatDate(visibleResult.expiresAt)}</span></div>
+        <div class="transfer-result-heading"><span class="transfer-result-dot"></span><h3>檔案上傳完成</h3><span>有效至 {formatDate(visibleResult.expiresAt)}</span></div>
         <p class="transfer-result-name" title={visibleResult.name}>{visibleResult.name}</p>
         <div class="transfer-share-content">
           <div class="transfer-links">
             <label for="share-url">分享連結</label>
             <div class="transfer-url-field"><input id="share-url" readonly value={visibleResult.share} aria-label="分享連結"/><button onclick={() => copy(visibleResult!.share, 'share')} aria-label="複製分享連結" title="複製分享連結">{#if copied === 'share'}<Check size={16}/>{:else}<Copy size={16}/>{/if}</button></div>
             <div class="transfer-private"><LockKeyhole size={12}/><span>私人管理連結</span><button onclick={() => copy(visibleResult!.manage, 'manage')}>{copied === 'manage' ? '已複製' : '複製'}</button><a href={visibleResult.manage} aria-label="開啟私人管理連結" title="開啟私人管理連結"><ArrowUpRight size={14}/></a></div>
-            <p class="transfer-private-hint">請保管管理連結，只有持有者能刪除檔案。</p>
+            <p class="transfer-private-hint">請另行保存管理連結，任何拿到的人都可以刪除檔案。</p>
           </div>
           {#if visibleResult.qr}<img class="transfer-qr" src={visibleResult.qr} width="88" height="88" alt="分享連結 QR Code"/>{/if}
         </div>
-        <button class="transfer-next" onclick={clearSelection} disabled={busy}>繼續分享下一個檔案 <ArrowRight size={14}/></button>
+        <button class="transfer-next" onclick={clearSelection} disabled={busy}>再傳一個檔案 <ArrowRight size={14}/></button>
       </section>
     {/if}
     <div class="transfer-options">
       <span class="transfer-option-label">分享方式</span>
       <div class="transfer-mode-switch" role="group" aria-label="分享方式">
-        <button class:selected={mode === 'once'} disabled={busy || !!result} onclick={() => mode = 'once'} aria-pressed={mode === 'once'}><Zap size={13}/>一次性快傳</button>
+        <button class:selected={mode === 'once'} disabled={busy || !!result} onclick={() => mode = 'once'} aria-pressed={mode === 'once'}><Zap size={13}/>下載一次</button>
         <button class:selected={mode === 'day'} disabled={busy || !!result} onclick={() => mode = 'day'} aria-pressed={mode === 'day'}><Clock3 size={13}/>24 小時</button>
       </div>
     </div>
-    <p class="transfer-mode-note"><ShieldCheck size={13}/><span>{mode === 'once' ? '只可領取一次，下載中斷也可能消耗唯一機會。' : '有效期限內可重複下載，到期立即停止存取。'}</span></p>
+    <p class="transfer-mode-note"><ShieldCheck size={13}/><span>{mode === 'once' ? '只能下載一次。下載中斷後也可能無法重試。' : '到期前可重複下載；期限過後連結失效。'}</span></p>
     {#if status && !status.uploadsEnabled}<div class="notice">目前暫停上傳。現有分享連結仍可正常使用。</div>{/if}
     {#if file && !result && status?.uploadsEnabled}
       <div class="transfer-auth">
-        <label for="invite">Beta 邀請碼 <span>僅供受邀測試者</span></label>
+        <label for="invite">測試邀請碼 <span>僅受邀使用者可上傳</span></label>
         <input id="invite" type="password" bind:value={invite} placeholder="輸入你的邀請碼" autocomplete="off" disabled={busy}/>
         {#if status.siteKey}<Turnstile siteKey={status.siteKey} onToken={v => verification = v} {revision}/>{:else}<p class="error-text">管理員尚未設定 Turnstile，暫時無法上傳。</p>{/if}
-        <button class="transfer-send" disabled={busy || !verification || !invite} onclick={start}><span>{stage === 'preparing' ? '準備安全上傳…' : busy ? (progress >= 99 ? '確認儲存中…' : `正在上傳 ${progress}%`) : stage === 'error' ? '重新傳送' : '開始傳送'}</span><ArrowRight size={16}/></button>
+        <button class="transfer-send" disabled={busy || !verification || !invite} onclick={start}><span>{stage === 'preparing' ? '正在準備上傳…' : busy ? (progress >= 99 ? '確認儲存中…' : `正在上傳 ${progress}%`) : stage === 'error' ? '重新上傳' : '上傳檔案'}</span><ArrowRight size={16}/></button>
         {#if stage === 'error' && (!verification || !invite)}<p class="transfer-retry-hint">確認邀請碼並重新完成人機驗證後，即可重試。</p>{/if}
       </div>
     {/if}
     {#if error && (!file || stage !== 'error')}<p class="transfer-error-notice" role="alert">{error}</p>{/if}
     <div class="transfer-capacity">
-      <div><span class="transfer-capacity-label"><i></i>共享空間</span>{#if status}<span class="transfer-capacity-value">剩餘 {formatBytes(Math.max(0, status.capacity - status.occupied))}<span> / {formatBytes(status.capacity)}</span></span>{:else if statusError}<button onclick={load} class="transfer-load-retry">重新取得容量 <RefreshCw size={12}/></button>{:else}<span class="transfer-loading">正在取得容量…</span>{/if}</div>
+      <div><span class="transfer-capacity-label"><i></i>共享空間</span>{#if status}<span class="transfer-capacity-value">剩餘 {formatBytes(Math.max(0, status.capacity - status.occupied))}<span> / {formatBytes(status.capacity)}</span></span>{:else if statusError}<button onclick={load} class="transfer-load-retry">重新取得容量 <RefreshCw size={12}/></button>{:else}<span class="transfer-loading">正在讀取剩餘容量…</span>{/if}</div>
       <div class="transfer-capacity-track"><div style:width={`${status ? Math.min(100, status.occupied / status.capacity * 100) : 0}%`}></div></div>
-      {#if statusError}<p class="transfer-capacity-error" role="alert">{statusError}</p>{:else}<p>所有人共用的小空間，謝謝你溫柔使用。</p>{/if}
+      {#if statusError}<p class="transfer-capacity-error" role="alert">{statusError}</p>{:else}<p>全站共用容量，檔案到期後會自動清除。</p>{/if}
     </div>
   </section>
-  <div class="transfer-trust"><span><LockKeyhole size={13}/>免登入</span><i></i><span><Clock3 size={13}/>最長 24 小時</span><i></i><span><ShieldCheck size={13}/>私人儲存</span></div>
-  <p class="transfer-privacy">連結只交給對的人。檔案未端對端加密，請勿上傳機密資料。</p>
+  <div class="transfer-trust"><span><LockKeyhole size={13}/>免登入</span><i></i><span><Clock3 size={13}/>最長 24 小時</span><i></i><span><ShieldCheck size={13}/>連結存取</span></div>
+  <p class="transfer-privacy">任何拿到連結的人都能下載。檔案未採用端對端加密，請勿上傳機密資料。</p>
 </div>
