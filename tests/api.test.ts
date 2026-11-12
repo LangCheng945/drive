@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { build } from 'esbuild';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 let mf: Miniflare;
 let db: Awaited<ReturnType<Miniflare['getD1Database']>>;
 let bucket: Awaited<ReturnType<Miniflare['getR2Bucket']>>;
@@ -10,8 +10,8 @@ const admin = 'test-administrator-token-with-at-least-32-characters';
 const request = (path: string, init?: RequestInit) => mf.dispatchFetch(`http://localhost/api/${path}`, { ...init, headers: { 'CF-Connecting-IP': `192.0.2.${++ip % 250}`, ...init?.headers } });
 const post = (path: string, body: unknown) => request(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 async function reserve(size = 4, mode = 'day', overrides: Record<string, unknown> = {}) {
-  const res = await post('uploads', { name: 'hello.txt', size, mode, invite: 'beta-test', turnstile: crypto.randomUUID(), ...overrides });
-  return { res, data: await res.json() as {upload: string; share: string; manage: string; error?: string} };
+  const res = await post('uploads', { name: 'hello.txt', size, mode, turnstile: crypto.randomUUID(), ...overrides });
+  return { res, data: await res.json() as {upload: string; share: string; manage: string; publicId: string | null; mode: string; visibility: string; error?: string} };
 }
 async function ready(mode = 'day') {
   const r = await reserve(4, mode);
@@ -25,11 +25,13 @@ beforeAll(async () => {
   const bundle = await build({ entryPoints: ['tests/fixture-worker.ts'], bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022' });
   mf = new Miniflare(convertV4MiniflareOptions({ modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2026-11-12', d1Databases: ['DB'], r2Buckets: ['BUCKET'], bindings: {
     ENABLE_UPLOADS: 'true', TOTAL_CAPACITY_BYTES: '1000000000', MAX_FILE_BYTES: '50000000', RETENTION_SECONDS: '86400',
-    BETA_INVITE_CODE: 'beta-test', ADMIN_TOKEN: admin, RATE_LIMIT_SALT: 'test-rate-limit-salt-more-than-32-characters', TURNSTILE_SECRET_KEY: 'test-secret', TURNSTILE_HOSTNAMES: 'localhost'
+    ADMIN_TOKEN: admin, RATE_LIMIT_SALT: 'test-rate-limit-salt-more-than-32-characters', TURNSTILE_SECRET_KEY: 'test-secret', TURNSTILE_HOSTNAMES: 'localhost'
   } }));
   db = await mf.getD1Database('DB'); bucket = await mf.getR2Bucket('BUCKET');
-  const sql = (await readFile('migrations/0001_initial.sql', 'utf8')).replace(/--[^\n]*/g, '');
-  for (const statement of sql.split(/;\s*(?=CREATE|INSERT|PRAGMA|$)/i).map(s => s.trim()).filter(Boolean)) await db.prepare(statement).run();
+  for (const file of (await readdir('migrations')).filter(f => f.endsWith('.sql')).sort()) {
+    const sql = (await readFile(`migrations/${file}`, 'utf8')).replace(/--[^\n]*/g, '');
+    for (const statement of sql.split(/;\s*(?=CREATE|INSERT|PRAGMA|ALTER|DROP|$)/i).map(s => s.trim()).filter(Boolean)) await db.prepare(statement).run();
+  }
 }, 60000);
 afterAll(async () => { await mf?.dispose(); });
 beforeEach(async () => {
@@ -38,6 +40,29 @@ beforeEach(async () => {
   const objs = await bucket.list(); for (const o of objs.objects) await bucket.delete(o.key);
 });
 describe('real workerd + D1 + R2 integration', () => {
+  const thumbnail = 'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
+  it('budgets thumbnails, exposes only ready previews and releases them on deletion', async () => {
+    const r = await reserve(4, 'day', { thumbnail });
+    expect(r.res.status).toBe(201);
+    expect(await occupied()).toBe(4 + thumbnail.length);
+    expect((await (await request('public')).json() as {files: unknown[]}).files).toHaveLength(0);
+    expect((await request(`uploads/${r.data.upload}`, {method:'PUT',body:'test'})).status).toBe(200);
+    const list = await (await request('public')).json() as {files: {thumbnail: string}[]};
+    expect(list.files[0].thumbnail).toBe(`data:image/webp;base64,${thumbnail}`);
+    expect((await request(`manage/${r.data.manage}`, {method:'DELETE'})).status).toBe(200);
+    expect(await occupied()).toBe(0);
+    expect((await db.prepare('SELECT thumbnail FROM files').first<{thumbnail: string | null}>())!.thumbnail).toBeNull();
+  });
+  it('includes thumbnail storage in atomic capacity checks', async () => {
+    await db.prepare('UPDATE storage SET occupied=?').bind(1000000000 - thumbnail.length - 4).run();
+    const results = await Promise.all([reserve(4,'day',{thumbnail}),reserve(4,'day',{thumbnail})]);
+    expect(results.map(r => r.res.status).sort()).toEqual([201,507]);
+    expect(await occupied()).toBe(1000000000);
+  });
+  it.each(['not an image','A'.repeat(4100),btoa('<svg/>')])('rejects malformed or oversized thumbnail (%#)', async thumbnail => {
+    expect((await reserve(4,'day',{thumbnail})).res.status).toBe(400);
+    expect(await occupied()).toBe(0);
+  });
   it('uploads, downloads exact bytes with safe headers, privately deletes', async () => {
     const f = await ready(); expect(await occupied()).toBe(4);
     const res = await request(`shares/${f.share}/download`, { method: 'POST' });
@@ -49,128 +74,6 @@ describe('real workerd + D1 + R2 integration', () => {
     expect((await request(`manage/${f.manage}`, { method: 'DELETE' })).status).toBe(200);
     expect(await occupied()).toBe(0); expect((await bucket.list()).objects.length).toBe(0);
     expect((await request(`shares/${f.share}`)).status).toBe(404);
-  });
-  it('previews small raster images without changing 24-hour download behavior', async () => {
-    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9ULzZgAAAABJRU5ErkJggg==', 'base64'));
-    const r = await reserve(png.length, 'day', {name:'photo.png'});
-    expect(r.res.status).toBe(201);
-    const uploaded = await request(`uploads/${r.data.upload}`, {method:'PUT', body:png});
-    expect(uploaded.status, await uploaded.text()).toBe(200);
-    const info = await (await request(`shares/${r.data.share}`)).json() as {previewable:boolean};
-    expect(info.previewable).toBe(true);
-    const preview = await request(`shares/${r.data.share}/preview`);
-    expect(preview.status).toBe(200);
-    expect(preview.headers.get('content-type')).toBe('image/png');
-    expect(preview.headers.get('content-disposition')).toContain('inline;');
-    expect(preview.headers.get('cache-control')).toContain('no-store');
-    expect(preview.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(new Uint8Array(await preview.arrayBuffer())).toEqual(png);
-    expect((await request(`shares/${r.data.share}/download`, {method:'POST'})).status).toBe(200);
-    expect((await request(`shares/${r.data.share}/preview`)).status).toBe(200);
-    await request(`manage/${r.data.manage}`, {method:'DELETE'});
-    expect((await request(`shares/${r.data.share}/preview`)).status).toBe(404);
-  });
-  it('never previews one-time links or untrusted file content', async () => {
-    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9ULzZgAAAABJRU5ErkJggg==', 'base64'));
-    const once = await reserve(png.length, 'once', {name:'photo.png'});
-    expect(once.res.status).toBe(201);
-    expect((await request(`uploads/${once.data.upload}`, {method:'PUT',body:png})).status).toBe(200);
-    const onceInfo = await (await request(`shares/${once.data.share}`)).json() as {previewable:boolean};
-    expect(onceInfo.previewable).toBe(false);
-    expect((await request(`shares/${once.data.share}/preview`)).status).toBe(404);
-    expect((await request(`shares/${once.data.share}/download`, {method:'POST'})).status).toBe(200);
-
-    const fake = await reserve(12, 'day', {name:'spoof.png'});
-    expect(fake.res.status).toBe(201);
-    expect((await request(`uploads/${fake.data.upload}`, {method:'PUT',body:'<h1>bad</h1>'})).status).toBe(200);
-    expect((await request(`shares/${fake.data.share}/preview`)).status).toBe(404);
-    expect((await request(`shares/${fake.data.share}/download`, {method:'POST'})).status).toBe(200);
-  });
-  it('does not preview unsupported file types or expired shares', async () => {
-    const r = await reserve(4, 'day', {name:'file.bin'});
-    expect(r.res.status).toBe(201);
-    expect((await request(`uploads/${r.data.upload}`, {method:'PUT',body:'test'})).status).toBe(200);
-    const f = r.data;
-    const info = await (await request(`shares/${f.share}`)).json() as {previewable:boolean};
-    expect(info.previewable).toBe(false);
-    expect((await request(`shares/${f.share}/preview`)).status).toBe(404);
-
-    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9ULzZgAAAABJRU5ErkJggg==', 'base64'));
-    const img = await reserve(png.length, 'day', {name:'photo.png'});
-    expect(img.res.status).toBe(201);
-    expect((await request(`uploads/${img.data.upload}`, {method:'PUT',body:png})).status).toBe(200);
-    await db.prepare('UPDATE files SET expires_at=1 WHERE share_hash=(SELECT share_hash FROM files WHERE mode=\'day\' AND size=? LIMIT 1)').bind(png.length).run();
-    expect((await request(`shares/${img.data.share}/preview`)).status).toBe(404);
-  });
-  it('previews PDFs in a sandboxable response without altering downloads', async () => {
-    const bytes = new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF');
-    const r = await reserve(bytes.length, 'day', {name: 'slides.pdf'});
-    expect(r.res.status).toBe(201);
-    expect((await request(`uploads/${r.data.upload}`, {method: 'PUT', body: bytes})).status).toBe(200);
-    const info = await (await request(`shares/${r.data.share}`)).json() as {previewable: boolean; previewKind: string};
-    expect(info.previewable).toBe(true);
-    expect(info.previewKind).toBe('pdf');
-    const preview = await request(`shares/${r.data.share}/preview`);
-    expect(preview.status).toBe(200);
-    expect(preview.headers.get('content-type')).toBe('application/pdf');
-    expect(preview.headers.get('content-security-policy')).toContain('sandbox;');
-    expect(preview.headers.get('content-security-policy')).toContain("frame-ancestors 'self'");
-    expect(preview.headers.get('x-frame-options')).toBeNull();
-    expect(new Uint8Array(await preview.arrayBuffer())).toEqual(bytes);
-    const downloaded = await request(`shares/${r.data.share}/download`, {method:'POST'});
-    expect(downloaded.status).toBe(200);
-    expect(downloaded.headers.get('content-disposition')).toContain('attachment;');
-    await downloaded.arrayBuffer();
-
-    const fake = await reserve('not-a-pdf'.length, 'day', {name: 'spoof.pdf'});
-    expect(fake.res.status).toBe(201);
-    expect((await request(`uploads/${fake.data.upload}`, {method:'PUT', body:'not-a-pdf'})).status).toBe(200);
-    expect((await request(`shares/${fake.data.share}/preview`)).status).toBe(404);
-  });
-  it('returns literal UTF-8 text, never rendered HTML, and rejects binary content', async () => {
-    const sample = '<script>alert(1)</script>\n## Plain text';
-    const r = await reserve(new TextEncoder().encode(sample).length, 'day', {name:'example.md'});
-    expect(r.res.status).toBe(201);
-    expect((await request(`uploads/${r.data.upload}`, {method:'PUT',body:sample})).status).toBe(200);
-    const metadata = await (await request(`shares/${r.data.share}`)).json() as {previewable:boolean;previewKind:string};
-    expect(metadata.previewable).toBe(true);
-    expect(metadata.previewKind).toBe('text');
-    const preview = await request(`shares/${r.data.share}/preview`);
-    expect(preview.status).toBe(200);
-    expect(preview.headers.get('content-type')).toContain('text/plain');
-    expect(preview.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(preview.headers.get('x-frame-options')).toBe('DENY');
-    expect(await preview.text()).toBe(sample);
-
-    const binary = Uint8Array.from([0, 1, 2, 3]);
-    const invalid = await reserve(binary.length, 'day', {name:'binary.txt'});
-    expect(invalid.res.status).toBe(201);
-    expect((await request(`uploads/${invalid.data.upload}`, {method:'PUT',body:binary})).status).toBe(200);
-    expect((await request(`shares/${invalid.data.share}/preview`)).status).toBe(404);
-
-    const badUtf8 = Uint8Array.from([0xc3, 0x28]);
-    const broken = await reserve(badUtf8.length, 'day', {name:'invalid.json'});
-    expect(broken.res.status).toBe(201);
-    expect((await request(`uploads/${broken.data.upload}`, {method:'PUT',body:badUtf8})).status).toBe(200);
-    expect((await request(`shares/${broken.data.share}/preview`)).status).toBe(404);
-  });
-  it('never previews once-only PDFs/text or text over the preview size cap', async () => {
-    const pdf = new TextEncoder().encode('%PDF-1.4\nbody');
-    const r = await reserve(pdf.length, 'once', {name:'once.pdf'});
-    expect(r.res.status).toBe(201);
-    expect((await request(`uploads/${r.data.upload}`, {method:'PUT', body:pdf})).status).toBe(200);
-    const info = await (await request(`shares/${r.data.share}`)).json() as {previewable:boolean;previewKind:string|null};
-    expect(info.previewable).toBe(false);
-    expect(info.previewKind).toBeNull();
-    expect((await request(`shares/${r.data.share}/preview`)).status).toBe(404);
-    expect((await request(`shares/${r.data.share}/download`, {method:'POST'})).status).toBe(200);
-
-    const larger = await reserve(256001, 'day', {name:'large.txt'});
-    expect(larger.res.status).toBe(201);
-    expect((await request(`uploads/${larger.data.upload}`, {method:'PUT',body:new Uint8Array(256001)})).status).toBe(200);
-    const tooLarge = await (await request(`shares/${larger.data.share}`)).json() as {previewable:boolean};
-    expect(tooLarge.previewable).toBe(false);
-    expect((await request(`shares/${larger.data.share}/preview`)).status).toBe(404);
   });
   it('rejects >50MB on server without reserving', async () => { expect((await reserve(50000001)).res.status).toBe(413); expect(await occupied()).toBe(0); });
   it('rejects when full', async () => { await db.prepare('UPDATE storage SET occupied=1000000000').run(); expect((await reserve()).res.status).toBe(507); });
@@ -210,8 +113,7 @@ describe('real workerd + D1 + R2 integration', () => {
     await mf.dispatchFetch('http://localhost/__cleanup'); await mf.dispatchFetch('http://localhost/__cleanup'); expect(await occupied()).toBe(0);
   });
   it('never reuses upload capability', async () => { const f = await ready(); expect((await request(`uploads/${f.upload}`, {method:'PUT', body:'test'})).status).toBe(404); });
-  it('blocks invalid invite, challenge, replay and active file types', async () => {
-    expect((await reserve(4,'day',{invite:'wrong'})).res.status).toBe(403);
+  it('blocks invalid challenges, replay and active file types without requiring an invitation', async () => {
     expect((await reserve(4,'day',{turnstile:'invalid'})).res.status).toBe(403);
     expect((await reserve(4,'day',{turnstile:'wronghost'})).res.status).toBe(403);
     expect((await reserve(4,'day',{turnstile:'wrongaction'})).res.status).toBe(403);
@@ -279,5 +181,59 @@ describe('real workerd + D1 + R2 integration', () => {
   it('allows exactly one concurrent replayed Turnstile reservation', async () => {
     const t=crypto.randomUUID();const results=await Promise.all(Array.from({length:5},()=>reserve(4,'day',{turnstile:t})));
     expect(results.filter(r=>r.res.status===201)).toHaveLength(1);expect(await occupied()).toBe(4);
+  });
+  it('defaults to public and 24h without an invitation; lists only completed uploads', async () => {
+    const r = await reserve(4, 'day', { mode: undefined, visibility: undefined });
+    expect(r.res.status).toBe(201); expect(r.data.mode).toBe('day'); expect(r.data.visibility).toBe('public');
+    expect((await (await request('public')).json() as {files: unknown[]}).files).toHaveLength(0);
+    expect((await request(`uploads/${r.data.upload}`, {method:'PUT',body:'test'})).status).toBe(200);
+    const listing = await (await request('public')).json() as {files: {publicId: string}[]};
+    expect(listing.files.map(f=>f.publicId)).toEqual([r.data.publicId]);
+    for (const secret of [r.data.share,r.data.manage,r.data.upload]) expect(JSON.stringify(listing)).not.toContain(secret);
+    expect((await request(`public/${r.data.publicId}`)).status).toBe(200);
+  });
+  it('keeps explicit unlisted files out of public metadata and downloads', async () => {
+    const r=await reserve(4,'day',{visibility:'unlisted'}); expect(r.data.publicId).toBeNull();
+    await request(`uploads/${r.data.upload}`,{method:'PUT',body:'test'});
+    expect((await (await request('public')).json() as {files: unknown[]}).files).toHaveLength(0);
+    expect((await request(`public/${r.data.share}`)).status).toBe(404);
+    expect((await request(`public/${r.data.share}/download`,{method:'POST'})).status).toBe(404);
+    const download=await request(`shares/${r.data.share}/download`,{method:'POST'});expect(await download.text()).toBe('test');
+  });
+  it('removes expired and deleted files from public access immediately', async () => {
+    const f=await ready(); await db.prepare('UPDATE files SET expires_at=1').run();
+    expect((await (await request('public')).json() as {files: unknown[]}).files).toHaveLength(0);
+    expect((await request(`public/${f.publicId}/download`,{method:'POST'})).status).toBe(404);
+    await db.prepare('UPDATE files SET expires_at=?').bind(Math.floor(Date.now()/1000)+100).run();
+    await request(`manage/${f.manage}`,{method:'DELETE'});
+    expect((await request(`public/${f.publicId}`)).status).toBe(404);
+    expect((await (await request('public')).json() as {files: unknown[]}).files).toHaveLength(0);
+  });
+  it('arbitrates a once-only claim across public and private download paths', async () => {
+    const f=await ready('once');
+    const responses=await Promise.all(Array.from({length:8},(_,i)=>request(`${i%2?'public/'+f.publicId:'shares/'+f.share}/download`,{method:'POST'})));
+    expect(responses.filter(r=>r.status===200)).toHaveLength(1);for(const r of responses)await r.text();
+    expect((await (await request('public')).json() as {files: unknown[]}).files).toHaveLength(0);
+    expect((await post(`public/${f.publicId}/report`,{reason:'report public claimed file'})).status).toBe(200);
+  });
+  it('validates public-list cursors and visibility values', async () => {
+    expect((await reserve(4,'day',{visibility:'invalid'})).res.status).toBe(400);
+    expect((await request('public?before=not-a-cursor')).status).toBe(400);
+  });
+  it('paginates public files without duplicate or missing handles', async () => {
+    const uploaded=await Promise.all(Array.from({length:23},()=>ready()));
+    const first=await (await request('public')).json() as {files:{publicId:string}[];nextCursor:string};
+    expect(first.files).toHaveLength(20);expect(first.nextCursor).toBeTruthy();
+    const second=await (await request(`public?before=${encodeURIComponent(first.nextCursor)}`)).json() as {files:{publicId:string}[];nextCursor:null};
+    expect(second.files).toHaveLength(3);expect(second.nextCursor).toBeNull();
+    const ids=[...first.files,...second.files].map(f=>f.publicId);
+    expect(new Set(ids).size).toBe(23);expect(ids.sort()).toEqual(uploaded.map(f=>f.publicId).sort());
+  });
+  it('preserves the unlisted database default for legacy-format records', async () => {
+    const t=Math.floor(Date.now()/1000);
+    await db.prepare("INSERT INTO files(id,share_hash,manage_hash,upload_hash,name,size,mode,state,created_at,expires_at,lease_until,delete_after) VALUES('legacy','old-share','old-manage','old-upload','legacy.txt',4,'day','ready',?,?,?,?)").bind(t,t+100,t+100,t+100).run();
+    const row=await db.prepare("SELECT visibility,public_id FROM files WHERE id='legacy'").first<{visibility:string;public_id:null}>();
+    expect(row).toEqual({visibility:'unlisted',public_id:null});
+    expect((await (await request('public')).json() as {files:unknown[]}).files).toHaveLength(0);
   });
 });

@@ -9,7 +9,6 @@ export interface Env {
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_HOSTNAMES?: string;
-  BETA_INVITE_CODE?: string;
   ADMIN_TOKEN?: string;
   RATE_LIMIT_SALT?: string;
 }
@@ -17,5 +16,7 @@ export interface FileRow {
   id: string; name: string; size: number; mode: 'once' | 'day';
   state: 'reserved' | 'uploading' | 'ready' | 'claimed' | 'deleting' | 'deleted';
   share_hash: string; manage_hash: string; upload_hash: string;
+  visibility: 'public' | 'unlisted'; public_id: string | null;
+  thumbnail: string | null; thumbnail_size: number;
   created_at: number; expires_at: number; lease_until: number; delete_after: number;
 }

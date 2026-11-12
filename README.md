@@ -1,6 +1,6 @@
 # LangCheng Drive
 
-**免登入的臨時檔案分享服務。**v0.1.0 · Limited Beta
+免登入的臨時檔案交換平台。v0.1.0 · Limited Beta
 
 [English](README.en.md) · [部署](docs/DEPLOYMENT.md) · [架構與安全](docs/ARCHITECTURE.md) · [管理與修復](docs/OPERATIONS.md)
 
@@ -11,11 +11,12 @@
 - 真正的私人 R2 儲存與串流上下載，並非 UI Demo。
 - 一次性快傳：D1 原子領取，只有一個請求成功。明確按下領取才消耗機會；中斷不退還。
 - 24 小時分享：有效期內重複下載，到期即拒絕，背景 Cron 分批刪除。
-- 檔案預覽：24 小時分享可按需預覽 PNG/JPG/GIF/WebP（最多 5 MB）、PDF（最多 8 MB）及 UTF-8 文字檔（最多 256 KB）。一次性分享不提供預覽，避免繞過單次領取限制。PDF 使用受限制的瀏覽器預覽框，部分瀏覽器可能需要直接下載。
+- 預設公開、24 小時分享。公開檔案列於首頁；可改為不公開，僅透過分享連結下載。舊版檔案不會自動公開。
+- 圖片縮圖與圖片、影音、純文字預覽。一次性檔案預覽原檔須先確認並消耗領取機會；查看縮圖不消耗。縮圖最多 4 KB，以編碼大小一併計入原子容量預留。
 - 全站共用 1,000,000,000 bytes，單檔 50,000,000 bytes，最長 86,400 秒，可由伺服器調整。
 - 原子容量預留、長度強制驗證、失敗重試清理、孤兒物件巡檢、私人刪除連結。
-- Turnstile 伺服器驗證、D1 頻率限制、Beta 邀請碼、管理員上傳開關與檢舉入口。
-- 繁體中文、響應式深淺色介面、置中／精簡上傳區、真實進度與重試、近期傳送紀錄、QR Code、鍵盤操作與減少動畫支援。
+- Turnstile 伺服器驗證、D1 頻率限制、管理員上傳開關與檢舉入口。
+- 繁體中文、響應式深淺色介面、精簡上傳區、真實進度與重試、近期傳送紀錄、QR Code、鍵盤操作與減少動畫支援。
 
 ## 快速開始
 
@@ -30,7 +31,7 @@ npm run db:local
 npm run dev
 ```
 
-先在 Cloudflare 建立獨立的開發用 Managed Turnstile widget，允許 `localhost` 與 `127.0.0.1`，將其 site key / secret 填入 `.dev.vars`，再開啟 Vite 顯示的本機網址。`.dev.vars` 的邀請碼需與表單一致；管理權杖及 rate salt 各自至少 32 字元。官方 dummy keys 不提供 action 且回傳 example.com，無法通過本專案嚴格檢查，請勿拿來測完整上傳。本地 D1、R2 使用模擬器，不會讀寫正式資料。若偏好完全模擬部署環境，執行 `npm run build` 再 `npm run preview`。離線後端整合測試不需要真實 Turnstile keys。
+先在 Cloudflare 建立獨立的開發用 Managed Turnstile widget，允許 `localhost` 與 `127.0.0.1`，將其 site key / secret 填入 `.dev.vars`，再開啟 Vite 顯示的本機網址。管理權杖及 rate salt 各自至少 32 字元。官方 dummy keys 不提供 action 且回傳 example.com，無法通過本專案嚴格檢查，請勿拿來測完整上傳。本地 D1、R2 使用模擬器，不會讀寫正式資料。若偏好完全模擬部署環境，執行 `npm run build` 再 `npm run preview`。離線後端整合測試不需要真實 Turnstile keys。
 
 ```sh
 npm run lint
@@ -54,15 +55,12 @@ Fork 後依 [Cloudflare CLI 部署指南](docs/DEPLOYMENT.md) 建立**自己的*
 | `TURNSTILE_SITE_KEY` | 空 | 公開 widget key |
 | `TURNSTILE_HOSTNAMES` | `drive.langcheng.uk` | 驗證成功回應允許的 hostname，以逗號分隔，不含 protocol |
 | `TURNSTILE_SECRET_KEY` | 無 | Secret，僅伺服器可見 |
-| `BETA_INVITE_CODE` | 無 | Secret，缺少時不接受任何上傳 |
 | `ADMIN_TOKEN` | 無 | Secret，至少 32 字元 |
 | `RATE_LIMIT_SALT` | 無 | 獨立 secret，至少 32 字元，用於雜湊 IP bucket |
 
 ## 隱私與限制
 
-沒有公開檔案列表或帳號。不記錄原始 IP；限流保存帶 secret 雜湊的短期計數。D1 儲存檔名、大小、到期及狀態，權杖只保存 SHA-256。分享連結是持有者權限，請只交給信任的人。管理連結與分享連結分開，遺失後無法找回。
-
-**預覽僅限受支援類型，文字只以純文字顯示，PDF 在受限制的框架中開啟。** 檔案類型與文字編碼驗證不能取代惡意內容掃描。
+不需要帳號。公開檔案的名稱、大小、到期時間與下載入口會顯示於首頁；不公開檔案不列出，但持有分享連結者仍可下載。不記錄原始 IP；限流保存帶 secret 雜湊的短期計數。D1 儲存檔案資訊、公開識別碼及私人權杖的 SHA-256。管理連結與分享連結分開，遺失後無法找回。
 
 **未提供端對端加密或惡意程式掃描。** 管理員及雲端供應商可能存取內容；請勿傳機密資料，下載後請自行確認安全。高風險副檔名封鎖不等於內容安全。到期拒絕存取是即時的，實體刪除是最終一致；已開始的傳輸及接收者保存的副本無法撤回。D1 tombstone 保留以防止權杖重生並協助修復；metadata 的保存政策見架構文件。
 

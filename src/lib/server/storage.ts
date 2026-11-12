@@ -7,7 +7,7 @@ export async function removeFile(e: Env, id: string): Promise<void> {
   if (!row || !['deleting', 'deleted'].includes(row.state)) return;
   try {
     await e.BUCKET.delete(`files/${id}`);
-    await e.DB.prepare("UPDATE files SET state='deleted',deleted_at=?,cleanup_error=0 WHERE id=? AND state='deleting'").bind(now(), id).run();
+    await e.DB.prepare("UPDATE files SET state='deleted',deleted_at=?,cleanup_error=0,thumbnail=NULL WHERE id=? AND state='deleting'").bind(now(), id).run();
   } catch {
     await e.DB.prepare('UPDATE files SET cleanup_error=cleanup_error+1,delete_after=? WHERE id=?').bind(now() + 300, id).run();
     throw new Error('Object deletion pending; capacity remains reserved');
@@ -38,4 +38,7 @@ export async function cleanup(e: Env) {
 }
 export async function publicFile(e: Env, hash: string) {
   return e.DB.prepare("SELECT * FROM files WHERE share_hash=? AND state='ready' AND expires_at>?").bind(hash, now()).first<FileRow>();
+}
+export async function listedFile(e: Env, handle: string) {
+  return e.DB.prepare("SELECT * FROM files WHERE public_id=? AND visibility='public' AND state='ready' AND expires_at>?").bind(handle, now()).first<FileRow>();
 }

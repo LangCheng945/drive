@@ -1,5 +1,7 @@
 # Third-party notices
 
+`static/github-mark.svg` is GitHub's official Invertocat mark, obtained from [GitHub's logo pack](https://brand.github.com/GitHub_Logos.zip). It is used only as a link to this project's GitHub repository, as permitted by the [GitHub brand guidelines](https://brand.github.com/foundations/logo). GitHub's trademarks and artwork are owned by GitHub, Inc.; they are not relicensed under this project's MIT license.
+
 Original project code is MIT. Dependencies retain their own licenses and copyrights; the project license does not relicense them. No restricted third-party UI/template source was used. The interface and CSS were authored for this project; shadcn-svelte was unnecessary for this small component set.
 
 Primary libraries used:

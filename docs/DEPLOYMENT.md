@@ -32,6 +32,8 @@ npx wrangler d1 migrations apply drive-db --remote
 
 This applies schema before serving requests. Back up existing deployments with D1 Time Travel/export before future schema changes.
 
+Upgrades must apply `0002_visibility.sql` before deploying code with public listing. It preserves all existing files as unlisted. New uploads default to public and 24-hour sharing; the upload form also offers unlisted access. R2 must remain private for both modes.
+
 ## 3. Turnstile
 
 Create a **Managed** Turnstile widget restricted to your real hostname, including your Pages production hostname if you want to use it. Dashboard or current Wrangler CLI:
@@ -48,12 +50,11 @@ Generate independent cryptographically random values (32 bytes or more) with you
 
 ```sh
 npx wrangler pages secret put TURNSTILE_SECRET_KEY --project-name langcheng-drive
-npx wrangler pages secret put BETA_INVITE_CODE --project-name langcheng-drive
 npx wrangler pages secret put ADMIN_TOKEN --project-name langcheng-drive
 npx wrangler pages secret put RATE_LIMIT_SALT --project-name langcheng-drive
 ```
 
-The cleanup Worker needs only DB/R2 bindings, no admin/Turnstile secrets. Keep `ENABLE_UPLOADS=false` for the first deployment. Ensure preview deployments use **separate** databases, buckets, invitations, Turnstile hosts and secrets; never give an untrusted pull request production bindings.
+The cleanup Worker needs only DB/R2 bindings, no admin/Turnstile secrets. Keep `ENABLE_UPLOADS=false` for the first deployment. Ensure preview deployments use **separate** databases, buckets, Turnstile hosts and secrets; never give an untrusted pull request production bindings.
 
 ## 5. Validate and deploy
 
@@ -72,7 +73,7 @@ The Cron runs every five minutes, processes up to six eligible deletions per inv
 
 Attach `drive.langcheng.uk` in Pages → Custom domains and follow Cloudflare DNS/certificate setup. Do not point the domain at R2. Forks should use their own domain. Confirm HTTPS and the Turnstile hostname allowlist before enabling uploads.
 
-Check `/api/status`, an upload, downloaded bytes, one-time concurrent claims, private deletion, expiry and cleanup in a dedicated staging deployment. Use the backend upload switch to pause during a problem. Then set `ENABLE_UPLOADS=true`, deploy Pages again and confirm the D1 switch is also enabled. Keep the invitation private.
+Check `/api/status`, an upload, downloaded bytes, one-time concurrent claims, private deletion, expiry and cleanup in a dedicated staging deployment. Use the backend upload switch to pause during a problem. Then set `ENABLE_UPLOADS=true`, deploy Pages again and confirm the D1 switch is also enabled. Uploads require Turnstile but no invitation code.
 
 ## Free-plan boundaries
 
