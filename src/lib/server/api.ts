@@ -2,6 +2,7 @@ import type { Env, FileRow } from './types';
 import type { ReadableStream as WorkerReadableStream } from '@cloudflare/workers-types';
 import { admin, ApiError, equal, fail, hash, now, rate, safeName, settings, smallJson, token, turnstile, validToken } from './security';
 import { cleanup, publicFile, removeFile } from './storage';
+import { canPreview, previewMime, validPreviewHeader } from './preview';
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 declare const FixedLengthStream: { new (size: number): { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } };
@@ -84,6 +85,42 @@ async function download(req: Request, e: Env, secret: string) {
     'Content-Security-Policy': "sandbox; default-src 'none'", 'Accept-Ranges': 'none'
   } });
 }
+async function preview(req: Request, e: Env, secret: string) {
+  await rate(e, req, 'preview', 20);
+  if (!validToken(secret)) unavailable();
+  const sh = await hash(secret), row = await publicFile(e, sh);
+  // Once-only files must not be read without consuming their claim.
+  if (!row || !canPreview(row.name, row.size, row.mode)) unavailable();
+  const mime = previewMime(row.name);
+  if (!mime) unavailable();
+
+  // Verify actual bytes, not just the filename. Read only a short range first,
+  // then stream the full image without buffering it in Worker memory.
+  const prefix = await e.BUCKET.get(`files/${row.id}`, { range: { offset: 0, length: 16 } });
+  if (!prefix || prefix.size !== row.size) unavailable();
+  const bytes = new Uint8Array(await prefix.arrayBuffer());
+  if (!validPreviewHeader(mime, bytes)) unavailable();
+
+  const object = await e.BUCKET.get(`files/${row.id}`);
+  if (!object || object.size !== row.size) {
+    if (object) await object.body.cancel();
+    unavailable();
+  }
+  // Expired or deleted shares must not become accessible while awaiting R2.
+  if (!await publicFile(e, sh)) { await object.body.cancel(); unavailable(); }
+  return new Response(object.body as unknown as ReadableStream<Uint8Array>, {
+    headers: {
+      'Content-Type': mime,
+      'Content-Length': String(object.size),
+      'Content-Disposition': 'inline; filename="preview"',
+      'Cache-Control': 'private, no-store',
+      'Content-Security-Policy': "sandbox; default-src 'none'",
+      'X-Content-Type-Options': 'nosniff',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+      'X-Frame-Options': 'DENY'
+    }
+  });
+}
 async function repair(e: Env, req: Request) {
   if (await enabled(e)) fail(409, 'PAUSE_FIRST', '請先關閉上傳再執行修復。');
   const active = await e.DB.prepare("SELECT id FROM files WHERE state IN ('reserved','uploading') AND lease_until>? LIMIT 1").bind(now()).first();
@@ -118,8 +155,9 @@ export async function handle(req: Request, e: Env): Promise<Response> {
       await rate(e, req, 'lookup', 60);
       const row = validToken(path[1]) ? await publicFile(e, await hash(path[1])) : null;
       if (!row) unavailable();
-      response = json({ name: row.name, size: row.size, mode: row.mode, expiresAt: row.expires_at });
-    } else if (path[0] === 'shares' && path[2] === 'download' && path.length === 3 && req.method === 'POST') response = await download(req, e, path[1]);
+      response = json({ name: row.name, size: row.size, mode: row.mode, expiresAt: row.expires_at, previewable: canPreview(row.name, row.size, row.mode) });
+    } else if (path[0] === 'shares' && path[2] === 'preview' && path.length === 3 && req.method === 'GET') response = await preview(req, e, path[1]);
+    else if (path[0] === 'shares' && path[2] === 'download' && path.length === 3 && req.method === 'POST') response = await download(req, e, path[1]);
     else if (path[0] === 'shares' && path[2] === 'report' && path.length === 3 && req.method === 'POST') {
       await rate(e, req, 'report', 3, 3600);
       // Recipients can report a once-only file after claiming it; this never
